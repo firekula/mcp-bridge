@@ -51,18 +51,15 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 或者添加 JSON 配置：
 
-``json
+```json
 {
-"mcpServers": {
-"cocos-creator": {
-"command": "node",
-"args": [
-"[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"
-]
+	"mcpServers": {
+		"cocos-creator": {
+			"command": "node",
+			"args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
+		}
+	}
 }
-}
-}
-
 ```
 
 注意：请将上述配置中的路径替换为你自己项目中 `mcp-proxy.js` 文件的实际绝对路径。
@@ -72,53 +69,62 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 服务提供以下 MCP 工具接口：
 
 ### 1. get_selected_node
+
 - **描述**: 获取当前编辑器中选中的节点 ID
 - **参数**: 无
 
 ### 2. set_node_name
+
 - **描述**: 修改指定节点的名称
 - **参数**:
-  - `id`: 节点的 UUID
-  - `newName`: 新的节点名称
+    - `id`: 节点的 UUID
+    - `newName`: 新的节点名称
 
 ### 3. save_scene
+
 - **描述**: 保存当前场景的修改
 - **参数**: 无
 
 ### 4. get_scene_hierarchy
+
 - **描述**: 获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）
 - **参数**: 无
 
 ### 5. update_node_transform
+
 - **描述**: 修改节点的坐标、缩放或颜色
 - **参数**:
-  - `id`: 节点 UUID
-  - `x`, `y`: 坐标
-  - `scaleX`, `scaleY`: 缩放值
-  - `color`: HEX 颜色代码（如 #FF0000）
+    - `id`: 节点 UUID
+    - `x`, `y`: 坐标
+    - `scaleX`, `scaleY`: 缩放值
+    - `color`: HEX 颜色代码（如 #FF0000）
 
 ### 6. create_scene
+
 - **描述**: 在 assets 目录下创建一个新的场景文件
 - **参数**:
-  - `sceneName`: 场景名称
+    - `sceneName`: 场景名称
 
 ### 7. create_prefab
+
 - **描述**: 将场景中的某个节点保存为预制体资源
 - **参数**:
-  - `nodeId`: 节点 UUID
-  - `prefabName`: 预制体名称
+    - `nodeId`: 节点 UUID
+    - `prefabName`: 预制体名称
 
 ### 8. open_scene
+
 - **描述**: 在编辑器中打开指定的场景文件
 - **参数**:
-  - `url`: 场景资源路径，如 `db://assets/NewScene.fire`
+    - `url`: 场景资源路径，如 `db://assets/NewScene.fire`
 
 ### 9. create_node
+
 - **描述**: 在当前场景中创建一个新节点
 - **参数**:
-  - `name`: 节点名称
-  - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
-  - `type`: 节点预设类型（`empty`, `sprite`, `label`, `canvas`）
+    - `name`: 节点名称
+    - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
+    - `type`: 节点预设类型（`empty`, `sprite`, `label`, `canvas`）
 
 ## 技术实现
 
@@ -129,8 +135,8 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **main.js**: 插件主入口，负责启动 HTTP 服务和处理 MCP 请求
 - **scene-script.js**: 场景脚本，负责实际执行节点操作
 - **panel/**: 面板界面，提供用户交互界面
-  - `index.html`: 面板 UI 结构
-  - `index.js`: 面板交互逻辑
+    - `index.html`: 面板 UI 结构
+    - `index.js`: 面板交互逻辑
 
 ### HTTP 服务
 
@@ -164,6 +170,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 ### 日志管理
 
 插件会记录所有操作的日志，包括：
+
 - 服务启动/停止
 - MCP 请求接收
 - 操作成功/失败状态
@@ -183,4 +190,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 ## 许可证
 
 MIT License
+
+```
+
 ```
