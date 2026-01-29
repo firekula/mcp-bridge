@@ -88,4 +88,55 @@ module.exports = {
 			if (event.reply) event.reply(new Error("Node not found"));
 		}
 	},
+	"create-node": function (event, args) {
+		const { name, parentId, type } = args;
+		const scene = cc.director.getScene();
+
+		let newNode = null;
+
+		// 特殊处理：如果是创建 Canvas，自动设置好适配
+		if (type === "canvas" || name === "Canvas") {
+			newNode = new cc.Node("Canvas");
+			let canvas = newNode.addComponent(cc.Canvas);
+			newNode.addComponent(cc.Widget);
+			// 设置默认设计分辨率
+			canvas.designResolution = cc.size(960, 640);
+			canvas.fitHeight = true;
+			// 自动在 Canvas 下创建一个 Camera
+			let camNode = new cc.Node("Main Camera");
+			camNode.addComponent(cc.Camera);
+			camNode.parent = newNode;
+		} else if (type === "sprite") {
+			newNode = new cc.Node(name || "New Sprite");
+			newNode.addComponent(cc.Sprite);
+		} else if (type === "label") {
+			newNode = new cc.Node(name || "New Label");
+			let l = newNode.addComponent(cc.Label);
+			l.string = "New Label";
+		} else {
+			newNode = new cc.Node(name || "New Node");
+		}
+
+		// 设置层级
+		let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
+		if (newNode) {
+			newNode.parent = parent;
+
+			// 坐标居中处理（如果是 Canvas 子节点）
+			if (parent.name === "Canvas") {
+				newNode.setPosition(0, 0);
+			} else {
+				newNode.setPosition(cc.v2(cc.winSize.width / 2, cc.winSize.height / 2));
+			}
+
+			// 通知编辑器刷新
+			Editor.Ipc.sendToMain("scene:dirty");
+			Editor.Ipc.sendToAll("scene:node-created", {
+				uuid: newNode.uuid,
+				parentUuid: parent.uuid,
+			});
+
+			if (event.reply) event.reply(null, newNode.uuid);
+		}
+	},
 };
