@@ -189,8 +189,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ## 许可证
 
-MIT License
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
 
-```
+允许任何人获取、使用、修改和分发本软件，但必须遵守以下条件：
 
-```
+1. 分发修改后的版本时，必须以相同的许可证公开源代码
+2. 通过网络提供服务时，也必须向用户提供源代码
+3. 任何衍生作品也必须遵循相同的许可证条款
+
+完整的许可证文本可在项目根目录的 LICENSE 文件中找到。
