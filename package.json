@@ -16,5 +16,11 @@
 		"title": "MCP Test Panel",
 		"width": 400,
 		"height": 300
+	},
+	"profiles": {
+		"local": {
+			"auto-start": false,
+			"last-port": 3456
+		}
 	}
 }

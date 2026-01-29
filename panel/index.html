@@ -1,17 +1,105 @@
-<div style="padding: 10px;">
-    <ui-prop name="Node ID">
-        <ui-input id="nodeId" placeholder="Click 'Get' to fetch ID"></ui-input>
-    </ui-prop>
-    <ui-prop name="New Name">
-        <ui-input id="newName" placeholder="Enter new name"></ui-input>
-    </ui-prop>
+<div class="mcp-container">
+	<div class="toolbar">
+		<div class="ctrl-group">
+			<span>Port:</span>
+			<ui-input id="portInput" value="3456"></ui-input>
+			<ui-button id="btnToggle" class="green">Start</ui-button>
+		</div>
 
-    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 5px;">
-        <ui-button id="btn-get" class="green">获取选中节点 ID</ui-button>
-        <ui-button id="btn-set" class="blue">修改节点名称</ui-button>
-    </div>
+		<!-- 新增的自动启动勾选框 -->
+		<div class="ctrl-group" style="margin-left: 15px">
+			<ui-checkbox id="autoStartCheck">Auto Start</ui-checkbox>
+		</div>
 
-    <div id="log" style="margin-top: 15px; font-size: 12px; color: #66ccff; border-top: 1px solid #555; padding-top: 5px;">
-        Status: Ready
-    </div>
+		<div class="spacer"></div>
+		<ui-button id="btnClear" class="transparent">Clear</ui-button>
+		<ui-button id="btnCopy" class="transparent">Copy All</ui-button>
+	</div>
+
+	<!-- 日志区域 -->
+	<div id="logConsole" class="log-view"></div>
 </div>
+
+<style>
+	:host {
+		height: 100%;
+		display: flex;
+		background-color: #2d2d2d;
+	}
+	.mcp-container {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		height: 100%;
+		padding: 5px;
+		box-sizing: border-box;
+	}
+	.toolbar {
+		display: flex;
+		align-items: center;
+		padding-bottom: 5px;
+		border-bottom: 1px solid #444;
+		flex-shrink: 0; /* 禁止头部压缩 */
+	}
+	.ctrl-group {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.spacer {
+		flex-grow: 1;
+	}
+
+	.log-view {
+		flex: 1; /* 自动撑满剩余空间 */
+		background: #1a1a1a;
+		margin-top: 5px;
+		border-radius: 2px;
+		overflow-y: auto;
+		overflow-x: hidden;
+		padding: 8px;
+		font-family: "Consolas", "Monaco", monospace;
+		font-size: 12px;
+
+		/* 【关键】允许鼠标选中文字 */
+		-webkit-user-select: text;
+		cursor: text;
+	}
+
+	.log-item {
+		margin-bottom: 3px;
+		line-height: 1.4;
+		border-left: 4px solid #444;
+		padding-left: 8px;
+		word-wrap: break-word;
+		white-space: pre-wrap;
+	}
+
+	/* 颜色修正 */
+	.time {
+		color: #5c6370;
+		margin-right: 8px;
+		font-weight: normal;
+		user-select: none;
+	}
+	.info {
+		border-left-color: #61afef;
+		color: #abb2bf;
+	}
+	.success {
+		border-left-color: #98c379;
+		color: #98c379;
+	}
+	.warn {
+		border-left-color: #e5c07b;
+		color: #e5c07b;
+	}
+	.error {
+		border-left-color: #e06c75;
+		color: #e06c75;
+	}
+	.mcp {
+		border-left-color: #c678dd;
+		color: #d19a66;
+	}
+</style>
