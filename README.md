@@ -32,6 +32,41 @@
 - **端口**: 可以自定义 HTTP 服务监听的端口，默认为 3456
 - **自动启动**: 可以设置编辑器启动时自动开启服务
 
+## 连接 AI 编辑器
+
+### 在 AI 编辑器（如 Cursor / VS Code）中配置
+
+如果你的 AI 编辑器提供的是 Type: command 或 Stdio 选项：
+
+```
+Command: node
+Args: [Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js
+```
+
+例如，在你的项目中，完整路径应该是：
+
+```
+Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.js
+```
+
+### 或者添加 JSON 配置：
+
+``json
+{
+"mcpServers": {
+"cocos-creator": {
+"command": "node",
+"args": [
+"[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"
+]
+}
+}
+}
+
+```
+
+注意：请将上述配置中的路径替换为你自己项目中 `mcp-proxy.js` 文件的实际绝对路径。
+
 ## API 接口
 
 服务提供以下 MCP 工具接口：
@@ -148,3 +183,4 @@
 ## 许可证
 
 MIT License
+```
