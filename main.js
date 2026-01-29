@@ -63,6 +63,111 @@ const getNewSceneTemplate = () => {
 	return JSON.stringify(sceneData);
 };
 
+const getToolsList = () => {
+	return [
+		{
+			name: "get_selected_node",
+			description: "获取当前编辑器中选中的节点 ID",
+			inputSchema: { type: "object", properties: {} },
+		},
+		{
+			name: "set_node_name",
+			description: "修改指定节点的名称",
+			inputSchema: {
+				type: "object",
+				properties: {
+					id: { type: "string", description: "节点的 UUID" },
+					newName: { type: "string", description: "新的节点名称" },
+				},
+				required: ["id", "newName"],
+			},
+		},
+		{
+			name: "save_scene",
+			description: "保存当前场景的修改",
+			inputSchema: { type: "object", properties: {} },
+		},
+		{
+			name: "get_scene_hierarchy",
+			description: "获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）",
+			inputSchema: { type: "object", properties: {} },
+		},
+		{
+			name: "update_node_transform",
+			description: "修改节点的坐标、缩放或颜色",
+			inputSchema: {
+				type: "object",
+				properties: {
+					id: { type: "string", description: "节点 UUID" },
+					x: { type: "number" },
+					y: { type: "number" },
+					scaleX: { type: "number" },
+					scaleY: { type: "number" },
+					color: { type: "string", description: "HEX 颜色代码如 #FF0000" },
+				},
+				required: ["id"],
+			},
+		},
+		{
+			name: "create_scene",
+			description: "在 assets 目录下创建一个新的场景文件",
+			inputSchema: {
+				type: "object",
+				properties: {
+					sceneName: { type: "string", description: "场景名称" },
+				},
+				required: ["sceneName"],
+			},
+		},
+		{
+			name: "create_prefab",
+			description: "将场景中的某个节点保存为预制体资源",
+			inputSchema: {
+				type: "object",
+				properties: {
+					nodeId: { type: "string", description: "节点 UUID" },
+					prefabName: { type: "string", description: "预制体名称" },
+				},
+				required: ["nodeId", "prefabName"],
+			},
+		},
+		{
+			name: "open_scene",
+			description: "在编辑器中打开指定的场景文件",
+			inputSchema: {
+				type: "object",
+				properties: {
+					url: {
+						type: "string",
+						description: "场景资源路径，如 db://assets/NewScene.fire",
+					},
+				},
+				required: ["url"],
+			},
+		},
+		{
+			name: "create_node",
+			description: "在当前场景中创建一个新节点",
+			inputSchema: {
+				type: "object",
+				properties: {
+					name: { type: "string", description: "节点名称" },
+					parentId: {
+						type: "string",
+						description: "父节点 UUID (可选，不传则挂在场景根部)",
+					},
+					type: {
+						type: "string",
+						enum: ["empty", "sprite", "label"],
+						description: "节点预设类型",
+					},
+				},
+				required: ["name"],
+			},
+		},
+	];
+};
+
 module.exports = {
 	"scene-script": "scene-script.js",
 	load() {
@@ -94,184 +199,65 @@ module.exports = {
 
 		try {
 			mcpServer = http.createServer((req, res) => {
-				// 设置 CORS 方便调试
-				res.setHeader("Access-Control-Allow-Origin", "*");
-				res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 				res.setHeader("Content-Type", "application/json");
-
-				if (req.method === "OPTIONS") {
-					res.end();
-					return;
-				}
+				res.setHeader("Access-Control-Allow-Origin", "*");
 
 				let body = "";
 				req.on("data", (chunk) => {
 					body += chunk;
 				});
 				req.on("end", () => {
-					try {
-						// 简单的路由处理
-						if (req.url === "/list-tools" && req.method === "GET") {
-							// 1. 返回工具定义 (符合 MCP 规范)
-							const tools = [
-								{
-									name: "get_selected_node",
-									description: "获取当前编辑器中选中的节点 ID",
-									inputSchema: { type: "object", properties: {} },
-								},
-								{
-									name: "set_node_name",
-									description: "修改指定节点的名称",
-									inputSchema: {
-										type: "object",
-										properties: {
-											id: { type: "string", description: "节点的 UUID" },
-											newName: { type: "string", description: "新的节点名称" },
-										},
-										required: ["id", "newName"],
-									},
-								},
-								{
-									name: "save_scene",
-									description: "保存当前场景的修改",
-									inputSchema: { type: "object", properties: {} },
-								},
-								{
-									name: "get_scene_hierarchy",
-									description: "获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）",
-									inputSchema: { type: "object", properties: {} },
-								},
-								{
-									name: "update_node_transform",
-									description: "修改节点的坐标、缩放或颜色",
-									inputSchema: {
-										type: "object",
-										properties: {
-											id: { type: "string", description: "节点 UUID" },
-											x: { type: "number" },
-											y: { type: "number" },
-											scaleX: { type: "number" },
-											scaleY: { type: "number" },
-											color: { type: "string", description: "HEX 颜色代码如 #FF0000" },
-										},
-										required: ["id"],
-									},
-								},
-								{
-									name: "create_scene",
-									description: "在 assets 目录下创建一个新的场景文件",
-									inputSchema: {
-										type: "object",
-										properties: {
-											sceneName: { type: "string", description: "场景名称" },
-										},
-										required: ["sceneName"],
-									},
-								},
-								{
-									name: "create_prefab",
-									description: "将场景中的某个节点保存为预制体资源",
-									inputSchema: {
-										type: "object",
-										properties: {
-											nodeId: { type: "string", description: "节点 UUID" },
-											prefabName: { type: "string", description: "预制体名称" },
-										},
-										required: ["nodeId", "prefabName"],
-									},
-								},
-								{
-									name: "open_scene",
-									description: "在编辑器中打开指定的场景文件",
-									inputSchema: {
-										type: "object",
-										properties: {
-											url: {
-												type: "string",
-												description: "场景资源路径，如 db://assets/NewScene.fire",
-											},
-										},
-										required: ["url"],
-									},
-								},
-								{
-									name: "create_node",
-									description: "在当前场景中创建一个新节点",
-									inputSchema: {
-										type: "object",
-										properties: {
-											name: { type: "string", description: "节点名称" },
-											parentId: {
-												type: "string",
-												description: "父节点 UUID (可选，不传则挂在场景根部)",
-											},
-											type: {
-												type: "string",
-												enum: ["empty", "sprite", "label"],
-												description: "节点预设类型",
-											},
-										},
-										required: ["name"],
-									},
-								},
-							];
-							return res.end(JSON.stringify({ tools }));
-						}
-						if (req.url === "/call-tool" && req.method === "POST") {
-							try {
-								const { name, arguments: args } = JSON.parse(body);
-
-								addLog("mcp", `REQ -> [${name}] ${JSON.stringify(args)}`);
-
-								this.handleMcpCall(name, args, (err, result) => {
-									// 3. 构建 MCP 标准响应格式
-									const response = {
-										content: [
-											{
-												type: "text",
-												text: err
-													? `Error: ${err}`
-													: typeof result === "object"
-														? JSON.stringify(result, null, 2)
-														: result,
-											},
-										],
-									};
-
-									// 4. 记录返回日志
-									if (err) {
-										addLog("error", `RES <- [${name}] Failed: ${err}`);
-									} else {
-										// 日志里只显示简短的返回值，防止长 JSON（如 hierarchy）刷屏
-										const logRes = typeof result === "object" ? "[Object Data]" : result;
-										addLog("success", `RES <- [${name}] Success: ${logRes}`);
-									}
-									res.end(JSON.stringify(response));
-								});
-							} catch (e) {
-								addLog("error", `Parse Error: ${e.message}`);
-								res.end(JSON.stringify({ content: [{ type: "text", text: `Error: ${e.message}` }] }));
-							}
-						} else {
-							res.statusCode = 404;
-							res.end(JSON.stringify({ error: "Not Found" }));
-						}
-					} catch (e) {
-						res.statusCode = 500;
-						res.end(JSON.stringify({ error: e.message }));
+					const url = req.url;
+					if (url === "/list-tools") {
+						const tools = getToolsList();
+						addLog("info", `AI Client requested tool list`);
+						// 明确返回成功结构
+						res.writeHead(200);
+						return res.end(JSON.stringify({ tools: tools }));
 					}
+					if (url === "/call-tool") {
+						try {
+							const { name, arguments: args } = JSON.parse(body || "{}");
+							addLog("mcp", `REQ -> [${name}]`);
+
+							this.handleMcpCall(name, args, (err, result) => {
+								const response = {
+									content: [
+										{
+											type: "text",
+											text: err
+												? `Error: ${err}`
+												: typeof result === "object"
+													? JSON.stringify(result, null, 2)
+													: result,
+										},
+									],
+								};
+								addLog(err ? "error" : "success", `RES <- [${name}]`);
+								res.writeHead(200);
+								res.end(JSON.stringify(response));
+							});
+						} catch (e) {
+							addLog("error", `JSON Parse Error: ${e.message}`);
+							res.writeHead(400);
+							res.end(JSON.stringify({ error: "Invalid JSON" }));
+						}
+						return;
+					}
+
+					// --- 兜底处理 (404) ---
+					res.writeHead(404);
+					res.end(JSON.stringify({ error: "Not Found", url: url }));
 				});
 			});
 
+			mcpServer.on("error", (e) => {
+				addLog("error", `Server Error: ${e.message}`);
+			});
 			mcpServer.listen(port, () => {
 				serverConfig.active = true;
-				addLog("success", `Server started on port ${port}`);
+				addLog("success", `MCP Server running at http://127.0.0.1:${port}`);
 				Editor.Ipc.sendToPanel("mcp-bridge", "mcp-bridge:state-changed", serverConfig);
-			});
-
-			mcpServer.on("error", (err) => {
-				addLog("error", `Server Error: ${err.message}`);
-				this.stopServer();
 			});
 			// 启动成功后顺便存一下端口
 			this.getProfile().set("last-port", port);
