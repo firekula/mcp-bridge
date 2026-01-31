@@ -268,4 +268,50 @@ module.exports = {
 
 		return properties;
 	},
+
+	"instantiate-prefab": function (event, args) {
+		const { prefabPath, parentId } = args;
+		const scene = cc.director.getScene();
+
+		if (!scene || !cc.director.getRunningScene()) {
+			if (event.reply) event.reply(new Error("Scene not ready or loading."));
+			return;
+		}
+
+		// 加载预制体资源
+		cc.loader.loadRes(prefabPath.replace("db://assets/", "").replace(".prefab", ""), cc.Prefab, (err, prefab) => {
+			if (err) {
+				if (event.reply) event.reply(new Error(`Failed to load prefab: ${err.message}`));
+				return;
+			}
+
+			// 实例化预制体
+			const instance = cc.instantiate(prefab);
+			if (!instance) {
+				if (event.reply) event.reply(new Error("Failed to instantiate prefab"));
+				return;
+			}
+
+			// 设置父节点
+			let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
+			if (parent) {
+				instance.parent = parent;
+
+				// 通知场景变脏
+				Editor.Ipc.sendToMain("scene:dirty");
+
+				// 通知 UI 刷新
+				setTimeout(() => {
+					Editor.Ipc.sendToAll("scene:node-created", {
+						uuid: instance.uuid,
+						parentUuid: parent.uuid,
+					});
+				}, 10);
+
+				if (event.reply) event.reply(null, `Prefab instantiated successfully with UUID: ${instance.uuid}`);
+			} else {
+				if (event.reply) event.reply(new Error("Parent node not found"));
+			}
+		});
+	},
 };

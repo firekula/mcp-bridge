@@ -5,6 +5,7 @@ const path = require("path");
 
 let logBuffer = []; // 存储所有日志
 let mcpServer = null;
+let isSceneBusy = false; 
 let serverConfig = {
 	port: 3456,
 	active: false,
@@ -230,9 +231,36 @@ const getToolsList = () => {
 				required: ["action", "path"],
 			},
 		},
+		{
+			name: "scene_management",
+			description: "场景管理",
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["create", "delete", "duplicate", "get_info"], description: "操作类型" },
+					path: { type: "string", description: "场景路径，如 db://assets/scenes/NewScene.fire" },
+					targetPath: { type: "string", description: "目标路径 (用于 duplicate 操作)" },
+					name: { type: "string", description: "场景名称 (用于 create 操作)" },
+				},
+				required: ["action", "path"],
+			},
+		},
+		{
+			name: "prefab_management",
+			description: "预制体管理",
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["create", "update", "instantiate", "get_info"], description: "操作类型" },
+					path: { type: "string", description: "预制体路径，如 db://assets/prefabs/NewPrefab.prefab" },
+					nodeId: { type: "string", description: "节点 ID (用于 create 操作)" },
+					parentId: { type: "string", description: "父节点 ID (用于 instantiate 操作)" },
+				},
+				required: ["action", "path"],
+			},
+		},
 	];
 };
-let isSceneBusy = false;
 
 module.exports = {
 	"scene-script": "scene-script.js",
@@ -441,6 +469,14 @@ module.exports = {
 				this.manageAsset(args, callback);
 				break;
 
+			case "scene_management":
+				this.sceneManagement(args, callback);
+				break;
+
+			case "prefab_management":
+				this.prefabManagement(args, callback);
+				break;
+
 			default:
 				callback(`Unknown tool: ${name}`);
 				break;
@@ -592,9 +628,142 @@ export default class NewScript extends cc.Component {
 			default:
 				callback(`Unknown asset action: ${action}`);
 				break;
-		}
-	},
-	// 暴露给 MCP 或面板的 API 封装
+			}
+		},
+
+		// 场景管理
+		sceneManagement(args, callback) {
+			const { action, path, targetPath, name } = args;
+
+			switch (action) {
+				case "create":
+					if (Editor.assetdb.exists(path)) {
+						return callback(`Scene already exists at ${path}`);
+					}
+					// 确保父目录存在
+					const fs = require('fs');
+					const pathModule = require('path');
+					const absolutePath = Editor.assetdb.urlToFspath(path);
+					const dirPath = pathModule.dirname(absolutePath);
+					if (!fs.existsSync(dirPath)) {
+						fs.mkdirSync(dirPath, { recursive: true });
+					}
+					Editor.assetdb.create(path, getNewSceneTemplate(), (err) => {
+						callback(err, err ? null : `Scene created at ${path}`);
+					});
+					break;
+
+				case "delete":
+					if (!Editor.assetdb.exists(path)) {
+						return callback(`Scene not found at ${path}`);
+					}
+					Editor.assetdb.delete([path], (err) => {
+						callback(err, err ? null : `Scene deleted at ${path}`);
+					});
+					break;
+
+				case "duplicate":
+					if (!Editor.assetdb.exists(path)) {
+						return callback(`Scene not found at ${path}`);
+					}
+					if (!targetPath) {
+						return callback(`Target path is required for duplicate operation`);
+					}
+					if (Editor.assetdb.exists(targetPath)) {
+						return callback(`Target scene already exists at ${targetPath}`);
+					}
+					// 读取原场景内容
+					Editor.assetdb.loadAny(path, (err, content) => {
+						if (err) {
+							return callback(`Failed to read scene: ${err}`);
+						}
+						// 确保目标目录存在
+						const fs = require('fs');
+						const pathModule = require('path');
+						const targetAbsolutePath = Editor.assetdb.urlToFspath(targetPath);
+						const targetDirPath = pathModule.dirname(targetAbsolutePath);
+						if (!fs.existsSync(targetDirPath)) {
+							fs.mkdirSync(targetDirPath, { recursive: true });
+						}
+						// 创建复制的场景
+						Editor.assetdb.create(targetPath, content, (err) => {
+							callback(err, err ? null : `Scene duplicated from ${path} to ${targetPath}`);
+						});
+					});
+					break;
+
+				case "get_info":
+					Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
+						callback(err, err ? null : info);
+					});
+					break;
+
+				default:
+				callback(`Unknown scene action: ${action}`);
+				break;
+			}
+		},
+
+		// 预制体管理
+		prefabManagement(args, callback) {
+			const { action, path, nodeId, parentId } = args;
+
+			switch (action) {
+				case "create":
+					if (!nodeId) {
+						return callback(`Node ID is required for create operation`);
+					}
+					if (Editor.assetdb.exists(path)) {
+						return callback(`Prefab already exists at ${path}`);
+					}
+					// 确保父目录存在
+					const fs = require('fs');
+					const pathModule = require('path');
+					const absolutePath = Editor.assetdb.urlToFspath(path);
+					const dirPath = pathModule.dirname(absolutePath);
+					if (!fs.existsSync(dirPath)) {
+						fs.mkdirSync(dirPath, { recursive: true });
+					}
+					// 从节点创建预制体
+					Editor.Ipc.sendToMain("scene:create-prefab", nodeId, path);
+					callback(null, `Command sent: Creating prefab from node ${nodeId} at ${path}`);
+					break;
+
+				case "update":
+					if (!nodeId) {
+						return callback(`Node ID is required for update operation`);
+					}
+					if (!Editor.assetdb.exists(path)) {
+						return callback(`Prefab not found at ${path}`);
+					}
+					// 更新预制体
+					Editor.Ipc.sendToMain("scene:update-prefab", nodeId, path);
+					callback(null, `Command sent: Updating prefab ${path} from node ${nodeId}`);
+					break;
+
+				case "instantiate":
+					if (!Editor.assetdb.exists(path)) {
+						return callback(`Prefab not found at ${path}`);
+					}
+					// 实例化预制体
+					Editor.Scene.callSceneScript("mcp-bridge", "instantiate-prefab", {
+						prefabPath: path,
+						parentId: parentId
+					}, callback);
+					break;
+
+				case "get_info":
+					Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
+						callback(err, err ? null : info);
+					});
+					break;
+
+				default:
+					callback(`Unknown prefab action: ${action}`);
+					break;
+			}
+		},
+		// 暴露给 MCP 或面板的 API 封装
 	messages: {
 		"open-test-panel"() {
 			Editor.Panel.open("mcp-bridge");

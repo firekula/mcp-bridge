@@ -103,26 +103,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `scaleX`, `scaleY`: 缩放值
     - `color`: HEX 颜色代码（如 #FF0000）
 
-### 6. create_scene
-
-- **描述**: 在 assets 目录下创建一个新的场景文件
-- **参数**:
-    - `sceneName`: 场景名称
-
-### 7. create_prefab
-
-- **描述**: 将场景中的某个节点保存为预制体资源
-- **参数**:
-    - `nodeId`: 节点 UUID
-    - `prefabName`: 预制体名称
-
-### 8. open_scene
+### 6. open_scene
 
 - **描述**: 在编辑器中打开指定的场景文件
 - **参数**:
     - `url`: 场景资源路径，如 `db://assets/NewScene.fire`
 
-### 9. create_node
+### 7. create_node
 
 - **描述**: 在当前场景中创建一个新节点
 - **参数**:
@@ -130,7 +117,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
     - `type`: 节点预设类型（`empty`, `sprite`, `label`, `canvas`）
 
-### 10. manage_components
+### 8. manage_components
 
 - **描述**: 管理节点组件
 - **参数**:
@@ -140,7 +127,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `componentId`: 组件 ID（用于 `remove` 操作）
     - `properties`: 组件属性（用于 `add` 操作）
 
-### 11. manage_script
+### 9. manage_script
 
 - **描述**: 管理脚本文件，默认创建 TypeScript 脚本
 - **参数**:
@@ -150,7 +137,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `name`: 脚本名称（用于 `create` 操作）
 - **默认模板**: 当未提供 content 时，会使用 TypeScript 格式的默认模板
 
-### 12. batch_execute
+### 10. batch_execute
 
 - **描述**: 批处理执行多个操作
 - **参数**:
@@ -158,7 +145,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
         - `tool`: 工具名称
         - `params`: 工具参数
 
-### 13. manage_asset
+### 11. manage_asset
 
 - **描述**: 管理资源
 - **参数**:
@@ -166,6 +153,24 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `path`: 资源路径，如 `db://assets/textures`
     - `targetPath`: 目标路径（用于 `move` 操作）
     - `content`: 资源内容（用于 `create` 操作）
+
+### 12. scene_management
+
+- **描述**: 场景管理
+- **参数**:
+    - `action`: 操作类型（`create`, `delete`, `duplicate`, `get_info`）
+    - `path`: 场景路径，如 `db://assets/scenes/NewScene.fire`
+    - `targetPath`: 目标路径（用于 `duplicate` 操作）
+    - `name`: 场景名称（用于 `create` 操作）
+
+### 13. prefab_management
+
+- **描述**: 预制体管理
+- **参数**:
+    - `action`: 操作类型（`create`, `update`, `instantiate`, `get_info`）
+    - `path`: 预制体路径，如 `db://assets/prefabs/NewPrefab.prefab`
+    - `nodeId`: 节点 ID（用于 `create` 和 `update` 操作）
+    - `parentId`: 父节点 ID（用于 `instantiate` 操作）
 
 ## 技术实现
 
