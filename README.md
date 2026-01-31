@@ -11,6 +11,10 @@
 - **HTTP 服务接口**: 提供标准 HTTP 接口，外部工具可以通过 MCP 协议调用 Cocos Creator 编辑器功能
 - **场景节点操作**: 获取、创建、修改场景中的节点
 - **资源管理**: 创建场景、预制体，打开指定资源
+- **组件管理**: 添加、删除、获取节点组件
+- **脚本管理**: 创建、删除、读取、写入脚本文件
+- **批处理执行**: 批量执行多个 MCP 工具操作，提高效率
+- **资产管理**: 创建、删除、移动、获取资源信息
 - **实时日志**: 提供详细的操作日志记录和展示
 - **自动启动**: 支持编辑器启动时自动开启服务
 
@@ -125,6 +129,43 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `name`: 节点名称
     - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
     - `type`: 节点预设类型（`empty`, `sprite`, `label`, `canvas`）
+
+### 10. manage_components
+
+- **描述**: 管理节点组件
+- **参数**:
+    - `nodeId`: 节点 UUID
+    - `action`: 操作类型（`add`, `remove`, `get`）
+    - `componentType`: 组件类型，如 `cc.Sprite`（用于 `add` 操作）
+    - `componentId`: 组件 ID（用于 `remove` 操作）
+    - `properties`: 组件属性（用于 `add` 操作）
+
+### 11. manage_script
+
+- **描述**: 管理脚本文件，默认创建 TypeScript 脚本
+- **参数**:
+    - `action`: 操作类型（`create`, `delete`, `read`, `write`）
+    - `path`: 脚本路径，如 `db://assets/scripts/NewScript.ts`
+    - `content`: 脚本内容（用于 `create` 和 `write` 操作）
+    - `name`: 脚本名称（用于 `create` 操作）
+- **默认模板**: 当未提供 content 时，会使用 TypeScript 格式的默认模板
+
+### 12. batch_execute
+
+- **描述**: 批处理执行多个操作
+- **参数**:
+    - `operations`: 操作列表
+        - `tool`: 工具名称
+        - `params`: 工具参数
+
+### 13. manage_asset
+
+- **描述**: 管理资源
+- **参数**:
+    - `action`: 操作类型（`create`, `delete`, `move`, `get_info`）
+    - `path`: 资源路径，如 `db://assets/textures`
+    - `targetPath`: 目标路径（用于 `move` 操作）
+    - `content`: 资源内容（用于 `create` 操作）
 
 ## 技术实现
 

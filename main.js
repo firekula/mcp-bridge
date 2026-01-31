@@ -133,7 +133,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "open_scene",
-			description: "在编辑器中打开指定的场景文件",
+			description: "打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒再进行节点创建或保存操作。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -165,8 +165,74 @@ const getToolsList = () => {
 				required: ["name"],
 			},
 		},
+		{
+			name: "manage_components",
+			description: "管理节点组件",
+			inputSchema: {
+				type: "object",
+				properties: {
+					nodeId: { type: "string", description: "节点 UUID" },
+					action: { type: "string", enum: ["add", "remove", "get"], description: "操作类型" },
+					componentType: { type: "string", description: "组件类型，如 cc.Sprite" },
+					componentId: { type: "string", description: "组件 ID (用于 remove 操作)" },
+					properties: { type: "object", description: "组件属性 (用于 add 操作)" },
+				},
+				required: ["nodeId", "action"],
+			},
+		},
+		{
+			name: "manage_script",
+			description: "管理脚本文件",
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["create", "delete", "read", "write"], description: "操作类型" },
+					path: { type: "string", description: "脚本路径，如 db://assets/scripts/NewScript.js" },
+					content: { type: "string", description: "脚本内容 (用于 create 和 write 操作)" },
+					name: { type: "string", description: "脚本名称 (用于 create 操作)" },
+				},
+				required: ["action", "path"],
+			},
+		},
+		{
+			name: "batch_execute",
+			description: "批处理执行多个操作",
+			inputSchema: {
+				type: "object",
+				properties: {
+					operations: {
+						type: "array",
+						items: {
+							type: "object",
+							properties: {
+								tool: { type: "string", description: "工具名称" },
+								params: { type: "object", description: "工具参数" },
+							},
+							required: ["tool", "params"],
+						},
+						description: "操作列表",
+					},
+				},
+				required: ["operations"],
+			},
+		},
+		{
+			name: "manage_asset",
+			description: "管理资源",
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["create", "delete", "move", "get_info"], description: "操作类型" },
+					path: { type: "string", description: "资源路径，如 db://assets/textures" },
+					targetPath: { type: "string", description: "目标路径 (用于 move 操作)" },
+					content: { type: "string", description: "资源内容 (用于 create 操作)" },
+				},
+				required: ["action", "path"],
+			},
+		},
 	];
 };
+let isSceneBusy = false;
 
 module.exports = {
 	"scene-script": "scene-script.js",
@@ -279,6 +345,9 @@ module.exports = {
 
 	// 统一处理逻辑，方便日志记录
 	handleMcpCall(name, args, callback) {
+		if (isSceneBusy && (name === "save_scene" || name === "create_node")) {
+			return callback("Editor is busy (Processing Scene), please wait a moment.");
+		}
 		switch (name) {
 			case "get_selected_node":
 				const ids = Editor.Selection.curSelection("node");
@@ -299,8 +368,18 @@ module.exports = {
 				break;
 
 			case "save_scene":
-				Editor.Ipc.sendToMain("scene:save-scene");
-				callback(null, "Scene saved successfully");
+				isSceneBusy = true;
+				addLog("info", "Preparing to save scene... Waiting for UI sync.");
+				// 强制延迟保存，防止死锁
+				setTimeout(() => {
+					Editor.Ipc.sendToMain("scene:save-scene");
+					addLog("info", "Executing Safe Save...");
+					setTimeout(() => {
+						isSceneBusy = false;
+						addLog("info", "Safe Save completed.");
+						callback(null, "Scene saved successfully.");
+					}, 1000);
+				}, 500);
 				break;
 
 			case "get_scene_hierarchy":
@@ -328,11 +407,16 @@ module.exports = {
 				break;
 
 			case "open_scene":
+				isSceneBusy = true; // 锁定
 				const openUuid = Editor.assetdb.urlToUuid(args.url);
 				if (openUuid) {
 					Editor.Ipc.sendToMain("scene:open-by-uuid", openUuid);
-					callback(null, `Success: Opening scene ${args.url}`);
+					setTimeout(() => {
+						isSceneBusy = false;
+						callback(null, `Success: Opening scene ${args.url}`);
+					}, 2000);
 				} else {
+					isSceneBusy = false;
 					callback(`Could not find asset with URL ${args.url}`);
 				}
 				break;
@@ -341,8 +425,172 @@ module.exports = {
 				Editor.Scene.callSceneScript("mcp-bridge", "create-node", args, callback);
 				break;
 
+			case "manage_components":
+				Editor.Scene.callSceneScript("mcp-bridge", "manage-components", args, callback);
+				break;
+
+			case "manage_script":
+				this.manageScript(args, callback);
+				break;
+
+			case "batch_execute":
+				this.batchExecute(args, callback);
+				break;
+
+			case "manage_asset":
+				this.manageAsset(args, callback);
+				break;
+
 			default:
 				callback(`Unknown tool: ${name}`);
+				break;
+		}
+	},
+
+	// 管理脚本文件
+	manageScript(args, callback) {
+		const { action, path, content } = args;
+
+		switch (action) {
+			case "create":
+				if (Editor.assetdb.exists(path)) {
+					return callback(`Script already exists at ${path}`);
+				}
+				// 确保父目录存在
+				const fs = require('fs');
+				const pathModule = require('path');
+				const absolutePath = Editor.assetdb.urlToFspath(path);
+				const dirPath = pathModule.dirname(absolutePath);
+				if (!fs.existsSync(dirPath)) {
+					fs.mkdirSync(dirPath, { recursive: true });
+				}
+				Editor.assetdb.create(path, content || `const { ccclass, property } = cc._decorator;
+
+@ccclass
+export default class NewScript extends cc.Component {
+    @property(cc.Label)
+    label: cc.Label = null;
+
+    @property
+    text: string = 'hello';
+
+    // LIFE-CYCLE CALLBACKS:
+
+    onLoad () {}
+
+    start () {}
+
+    update (dt) {}
+}`, (err) => {
+					callback(err, err ? null : `Script created at ${path}`);
+				});
+				break;
+
+			case "delete":
+				if (!Editor.assetdb.exists(path)) {
+					return callback(`Script not found at ${path}`);
+				}
+				Editor.assetdb.delete([path], (err) => {
+					callback(err, err ? null : `Script deleted at ${path}`);
+				});
+				break;
+
+			case "read":
+				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
+					if (err) {
+						return callback(`Failed to get script info: ${err}`);
+					}
+					Editor.assetdb.loadAny(path, (err, content) => {
+						callback(err, err ? null : content);
+					});
+				});
+				break;
+
+			case "write":
+				Editor.assetdb.create(path, content, (err) => {
+					callback(err, err ? null : `Script updated at ${path}`);
+				});
+				break;
+
+			default:
+				callback(`Unknown script action: ${action}`);
+				break;
+		}
+	},
+
+	// 批处理执行
+	batchExecute(args, callback) {
+		const { operations } = args;
+		const results = [];
+		let completed = 0;
+
+		if (!operations || operations.length === 0) {
+			return callback("No operations provided");
+		}
+
+		operations.forEach((operation, index) => {
+			this.handleMcpCall(operation.tool, operation.params, (err, result) => {
+				results[index] = { tool: operation.tool, error: err, result: result };
+				completed++;
+
+				if (completed === operations.length) {
+					callback(null, results);
+				}
+			});
+		});
+	},
+
+	// 管理资源
+	manageAsset(args, callback) {
+		const { action, path, targetPath, content } = args;
+
+		switch (action) {
+			case "create":
+				if (Editor.assetdb.exists(path)) {
+					return callback(`Asset already exists at ${path}`);
+				}
+				// 确保父目录存在
+				const fs = require('fs');
+				const pathModule = require('path');
+				const absolutePath = Editor.assetdb.urlToFspath(path);
+				const dirPath = pathModule.dirname(absolutePath);
+				if (!fs.existsSync(dirPath)) {
+					fs.mkdirSync(dirPath, { recursive: true });
+				}
+				Editor.assetdb.create(path, content || '', (err) => {
+					callback(err, err ? null : `Asset created at ${path}`);
+				});
+				break;
+
+			case "delete":
+				if (!Editor.assetdb.exists(path)) {
+					return callback(`Asset not found at ${path}`);
+				}
+				Editor.assetdb.delete([path], (err) => {
+					callback(err, err ? null : `Asset deleted at ${path}`);
+				});
+				break;
+
+			case "move":
+				if (!Editor.assetdb.exists(path)) {
+					return callback(`Asset not found at ${path}`);
+				}
+				if (Editor.assetdb.exists(targetPath)) {
+					return callback(`Target asset already exists at ${targetPath}`);
+				}
+				Editor.assetdb.move(path, targetPath, (err) => {
+					callback(err, err ? null : `Asset moved from ${path} to ${targetPath}`);
+				});
+				break;
+
+			case "get_info":
+				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
+					callback(err, err ? null : info);
+				});
+				break;
+
+			default:
+				callback(`Unknown asset action: ${action}`);
 				break;
 		}
 	},

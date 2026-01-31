@@ -91,6 +91,10 @@ module.exports = {
 	"create-node": function (event, args) {
 		const { name, parentId, type } = args;
 		const scene = cc.director.getScene();
+		if (!scene || !cc.director.getRunningScene()) {
+			if (event.reply) event.reply(new Error("Scene not ready or loading."));
+			return;
+		}
 
 		let newNode = null;
 
@@ -119,24 +123,149 @@ module.exports = {
 
 		// 设置层级
 		let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
-		if (newNode) {
+		if (parent) {
 			newNode.parent = parent;
 
-			// 坐标居中处理（如果是 Canvas 子节点）
-			if (parent.name === "Canvas") {
-				newNode.setPosition(0, 0);
-			} else {
-				newNode.setPosition(cc.v2(cc.winSize.width / 2, cc.winSize.height / 2));
-			}
-
-			// 通知编辑器刷新
+			// 【优化】通知主进程场景变脏
 			Editor.Ipc.sendToMain("scene:dirty");
-			Editor.Ipc.sendToAll("scene:node-created", {
-				uuid: newNode.uuid,
-				parentUuid: parent.uuid,
-			});
+
+			// 【关键】使用 setTimeout 延迟通知 UI 刷新，让出主循环
+			setTimeout(() => {
+				Editor.Ipc.sendToAll("scene:node-created", {
+					uuid: newNode.uuid,
+					parentUuid: parent.uuid,
+				});
+			}, 10);
 
 			if (event.reply) event.reply(null, newNode.uuid);
 		}
+	},
+
+	"manage-components": function (event, args) {
+		const { nodeId, action, componentType, componentId, properties } = args;
+		let node = cc.engine.getInstanceById(nodeId);
+
+		if (!node) {
+			if (event.reply) event.reply(new Error("Node not found"));
+			return;
+		}
+
+		switch (action) {
+			case "add":
+				if (!componentType) {
+					if (event.reply) event.reply(new Error("Component type is required"));
+					return;
+				}
+
+				try {
+					// 解析组件类型
+					let compClass = null;
+					if (componentType.startsWith("cc.")) {
+						const className = componentType.replace("cc.", "");
+						compClass = cc[className];
+					} else {
+						// 尝试获取自定义组件
+						compClass = cc.js.getClassByName(componentType);
+					}
+
+					if (!compClass) {
+						if (event.reply) event.reply(new Error(`Component type not found: ${componentType}`));
+						return;
+					}
+
+					// 添加组件
+					const component = node.addComponent(compClass);
+
+					// 设置属性
+					if (properties) {
+						for (const [key, value] of Object.entries(properties)) {
+							if (component[key] !== undefined) {
+								component[key] = value;
+							}
+						}
+					}
+
+					Editor.Ipc.sendToMain("scene:dirty");
+					Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
+
+					if (event.reply) event.reply(null, `Component ${componentType} added`);
+				} catch (err) {
+					if (event.reply) event.reply(new Error(`Failed to add component: ${err.message}`));
+				}
+				break;
+
+			case "remove":
+				if (!componentId) {
+					if (event.reply) event.reply(new Error("Component ID is required"));
+					return;
+				}
+
+				try {
+					// 查找并移除组件
+					const component = node.getComponentById(componentId);
+					if (component) {
+						node.removeComponent(component);
+						Editor.Ipc.sendToMain("scene:dirty");
+						Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
+						if (event.reply) event.reply(null, "Component removed");
+					} else {
+						if (event.reply) event.reply(new Error("Component not found"));
+					}
+				} catch (err) {
+					if (event.reply) event.reply(new Error(`Failed to remove component: ${err.message}`));
+				}
+				break;
+
+			case "get":
+				try {
+					const components = node._components.map((c) => {
+						// 获取组件属性
+						const properties = {};
+						for (const key in c) {
+							if (typeof c[key] !== "function" && 
+								!key.startsWith("_") && 
+								c[key] !== undefined) {
+								try {
+									properties[key] = c[key];
+								} catch (e) {
+									// 忽略无法序列化的属性
+								}
+							}
+						}
+						return {
+							type: c.__typename,
+							uuid: c.uuid,
+							properties: properties
+						};
+					});
+					if (event.reply) event.reply(null, components);
+				} catch (err) {
+					if (event.reply) event.reply(new Error(`Failed to get components: ${err.message}`));
+				}
+				break;
+
+			default:
+				if (event.reply) event.reply(new Error(`Unknown component action: ${action}`));
+				break;
+		}
+	},
+
+	"get-component-properties": function (component) {
+		const properties = {};
+
+		// 遍历组件属性
+		for (const key in component) {
+			if (typeof component[key] !== "function" && 
+				!key.startsWith("_") && 
+				component[key] !== undefined) {
+				try {
+					properties[key] = component[key];
+				} catch (e) {
+					// 忽略无法序列化的属性
+				}
+			}
+		}
+
+		return properties;
 	},
 };
