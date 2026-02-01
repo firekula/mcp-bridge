@@ -36,6 +36,10 @@
             <div class="resizer" id="testResizer"></div>
 
             <div class="right-panel">
+                <div class="tool-description">
+                    <label>工具说明:</label>
+                    <div id="toolDescription" class="description-box">选择工具查看说明</div>
+                </div>
                 <div class="flex-v">
                     <label>工具参数 (JSON):</label>
                     <textarea id="toolParams" spellcheck="false" placeholder='{}'></textarea>
@@ -90,4 +94,19 @@
     #resultContent { flex: 1; }
     .button-group { display: flex; gap: 5px; padding: 5px 0; }
     label { font-size: 11px; color: #888; margin: 4px 0; }
+    .tool-description {
+        margin-bottom: 10px;
+    }
+    .description-box {
+        background: #222;
+        color: #ccc;
+        border: 1px solid #444;
+        padding: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        min-height: 60px;
+        max-height: 120px;
+        overflow-y: auto;
+        border-radius: 2px;
+    }
 </style>

@@ -91,7 +91,7 @@ module.exports = {
 	"create-node": function (event, args) {
 		const { name, parentId, type } = args;
 		const scene = cc.director.getScene();
-		if (!scene || !cc.director.getRunningScene()) {
+		if (!scene) {
 			if (event.reply) event.reply(new Error("Scene not ready or loading."));
 			return;
 		}
@@ -202,7 +202,16 @@ module.exports = {
 
 				try {
 					// 查找并移除组件
-					const component = node.getComponentById(componentId);
+					let component = null;
+					if (node._components) {
+						for (let i = 0; i < node._components.length; i++) {
+							if (node._components[i].uuid === componentId) {
+								component = node._components[i];
+								break;
+							}
+						}
+					}
+
 					if (component) {
 						node.removeComponent(component);
 						Editor.Ipc.sendToMain("scene:dirty");
@@ -222,20 +231,51 @@ module.exports = {
 						// 获取组件属性
 						const properties = {};
 						for (const key in c) {
-							if (typeof c[key] !== "function" && 
-								!key.startsWith("_") && 
-								c[key] !== undefined) {
+							if (typeof c[key] !== "function" && !key.startsWith("_") && c[key] !== undefined) {
 								try {
-									properties[key] = c[key];
+									// Safe serialization check
+									const val = c[key];
+									if (val === null || val === undefined) {
+										properties[key] = val;
+										continue;
+									}
+
+									// Primitives are safe
+									if (typeof val !== 'object') {
+										properties[key] = val;
+										continue;
+									}
+
+									// Special Cocos Types
+									if (val instanceof cc.ValueType) {
+										properties[key] = val.toString();
+									} else if (val instanceof cc.Asset) {
+										properties[key] = `Asset(${val.name})`;
+									} else if (val instanceof cc.Node) {
+										properties[key] = `Node(${val.name})`;
+									} else if (val instanceof cc.Component) {
+										properties[key] = `Component(${val.name}<${val.__typename}>)`;
+									} else {
+										// Arrays and Plain Objects
+										// Attempt to strip to pure JSON data to avoid IPC errors with Native/Circular objects
+										try {
+											const jsonStr = JSON.stringify(val);
+											// Ensure we don't pass the original object reference
+											properties[key] = JSON.parse(jsonStr);
+										} catch (e) {
+											// If JSON fails (e.g. circular), format as string
+											properties[key] = `[Complex Object: ${val.constructor ? val.constructor.name : typeof val}]`;
+										}
+									}
 								} catch (e) {
-									// 忽略无法序列化的属性
+									properties[key] = "[Serialization Error]";
 								}
 							}
 						}
 						return {
-							type: c.__typename,
+							type: cc.js.getClassName(c) || c.constructor.name || "Unknown",
 							uuid: c.uuid,
-							properties: properties
+							properties: properties,
 						};
 					});
 					if (event.reply) event.reply(null, components);
@@ -255,9 +295,7 @@ module.exports = {
 
 		// 遍历组件属性
 		for (const key in component) {
-			if (typeof component[key] !== "function" && 
-				!key.startsWith("_") && 
-				component[key] !== undefined) {
+			if (typeof component[key] !== "function" && !key.startsWith("_") && component[key] !== undefined) {
 				try {
 					properties[key] = component[key];
 				} catch (e) {
@@ -273,7 +311,7 @@ module.exports = {
 		const { prefabPath, parentId } = args;
 		const scene = cc.director.getScene();
 
-		if (!scene || !cc.director.getRunningScene()) {
+		if (!scene) {
 			if (event.reply) event.reply(new Error("Scene not ready or loading."));
 			return;
 		}
@@ -313,5 +351,209 @@ module.exports = {
 				if (event.reply) event.reply(new Error("Parent node not found"));
 			}
 		});
+	},
+
+	"find-gameobjects": function (event, args) {
+		const { conditions, recursive = true } = args;
+		const result = [];
+		const scene = cc.director.getScene();
+
+		function searchNode(node) {
+			// 跳过编辑器内部的私有节点
+			if (node.name.startsWith("Editor Scene") || node.name === "gizmoRoot") {
+				return;
+			}
+
+			// 检查节点是否满足条件
+			let match = true;
+
+			if (conditions.name && !node.name.includes(conditions.name)) {
+				match = false;
+			}
+
+			if (conditions.component) {
+				let hasComponent = false;
+				try {
+					if (conditions.component.startsWith("cc.")) {
+						const className = conditions.component.replace("cc.", "");
+						hasComponent = node.getComponent(cc[className]) !== null;
+					} else {
+						hasComponent = node.getComponent(conditions.component) !== null;
+					}
+				} catch (e) {
+					hasComponent = false;
+				}
+				if (!hasComponent) {
+					match = false;
+				}
+			}
+
+			if (conditions.active !== undefined && node.active !== conditions.active) {
+				match = false;
+			}
+
+			if (match) {
+				result.push({
+					uuid: node.uuid,
+					name: node.name,
+					active: node.active,
+					position: { x: node.x, y: node.y },
+					scale: { x: node.scaleX, y: node.scaleY },
+					size: { width: node.width, height: node.height },
+					components: node._components.map((c) => c.__typename),
+				});
+			}
+
+			// 递归搜索子节点
+			if (recursive) {
+				for (let i = 0; i < node.childrenCount; i++) {
+					searchNode(node.children[i]);
+				}
+			}
+		}
+
+		// 从场景根节点开始搜索
+		if (scene) {
+			searchNode(scene);
+		}
+
+		if (event.reply) {
+			event.reply(null, result);
+		}
+	},
+
+	"manage-vfx": function (event, args) {
+		const { action, nodeId, properties, name, parentId } = args;
+		const scene = cc.director.getScene();
+
+		const applyParticleProperties = (particleSystem, props) => {
+			if (!props) return;
+
+			if (props.duration !== undefined) particleSystem.duration = props.duration;
+			if (props.emissionRate !== undefined) particleSystem.emissionRate = props.emissionRate;
+			if (props.life !== undefined) particleSystem.life = props.life;
+			if (props.lifeVar !== undefined) particleSystem.lifeVar = props.lifeVar;
+
+			// 【关键修复】启用自定义属性，否则属性修改可能不生效
+			particleSystem.custom = true;
+
+			if (props.startColor) particleSystem.startColor = new cc.Color().fromHEX(props.startColor);
+			if (props.endColor) particleSystem.endColor = new cc.Color().fromHEX(props.endColor);
+
+			if (props.startSize !== undefined) particleSystem.startSize = props.startSize;
+			if (props.endSize !== undefined) particleSystem.endSize = props.endSize;
+
+			if (props.speed !== undefined) particleSystem.speed = props.speed;
+			if (props.angle !== undefined) particleSystem.angle = props.angle;
+
+			if (props.gravity) {
+				if (props.gravity.x !== undefined) particleSystem.gravity.x = props.gravity.x;
+				if (props.gravity.y !== undefined) particleSystem.gravity.y = props.gravity.y;
+			}
+
+			// 处理文件/纹理加载
+			if (props.file) {
+				// main.js 已经将 db:// 路径转换为 UUID
+				// 如果用户直接传递 URL (http/https) 或其他格式，cc.assetManager.loadAny 也能处理
+				const uuid = props.file;
+				cc.assetManager.loadAny(uuid, (err, asset) => {
+					if (!err) {
+						if (asset instanceof cc.ParticleAsset) {
+							particleSystem.file = asset;
+						} else if (asset instanceof cc.Texture2D || asset instanceof cc.SpriteFrame) {
+							particleSystem.texture = asset;
+						}
+						Editor.Ipc.sendToMain("scene:dirty");
+					}
+				});
+			} else if (!particleSystem.texture && !particleSystem.file && args.defaultSpriteUuid) {
+				// 【关键修复】如果没有纹理，加载默认纹理 (UUID 由 main.js 传入)
+				Editor.log(`[mcp-bridge] Loading default texture with UUID: ${args.defaultSpriteUuid}`);
+				cc.assetManager.loadAny(args.defaultSpriteUuid, (err, asset) => {
+					if (err) {
+						Editor.error(`[mcp-bridge] Failed to load default texture: ${err.message}`);
+					} else if (asset instanceof cc.Texture2D || asset instanceof cc.SpriteFrame) {
+						Editor.log(`[mcp-bridge] Default texture loaded successfully.`);
+						particleSystem.texture = asset;
+						Editor.Ipc.sendToMain("scene:dirty");
+					} else {
+						Editor.warn(`[mcp-bridge] Loaded asset is not a texture: ${asset}`);
+					}
+				});
+			}
+		};
+
+		if (action === "create") {
+			let newNode = new cc.Node(name || "New Particle");
+			let particleSystem = newNode.addComponent(cc.ParticleSystem);
+
+			// 设置默认值
+			particleSystem.resetSystem();
+			particleSystem.custom = true; // 确保新创建的也是 custom 模式
+
+			applyParticleProperties(particleSystem, properties);
+
+			let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
+			if (parent) {
+				newNode.parent = parent;
+				Editor.Ipc.sendToMain("scene:dirty");
+				setTimeout(() => {
+					Editor.Ipc.sendToAll("scene:node-created", {
+						uuid: newNode.uuid,
+						parentUuid: parent.uuid,
+					});
+				}, 10);
+				if (event.reply) event.reply(null, newNode.uuid);
+			} else {
+				if (event.reply) event.reply(new Error("Parent node not found"));
+			}
+
+		} else if (action === "update") {
+			let node = cc.engine.getInstanceById(nodeId);
+			if (node) {
+				let particleSystem = node.getComponent(cc.ParticleSystem);
+				if (!particleSystem) {
+					// 如果没有组件，自动添加
+					particleSystem = node.addComponent(cc.ParticleSystem);
+				}
+
+				applyParticleProperties(particleSystem, properties);
+
+				Editor.Ipc.sendToMain("scene:dirty");
+				Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
+				if (event.reply) event.reply(null, "VFX updated");
+			} else {
+				if (event.reply) event.reply(new Error("Node not found"));
+			}
+
+		} else if (action === "get_info") {
+			let node = cc.engine.getInstanceById(nodeId);
+			if (node) {
+				let ps = node.getComponent(cc.ParticleSystem);
+				if (ps) {
+					const info = {
+						duration: ps.duration,
+						emissionRate: ps.emissionRate,
+						life: ps.life,
+						lifeVar: ps.lifeVar,
+						startColor: ps.startColor.toHEX("#RRGGBB"),
+						endColor: ps.endColor.toHEX("#RRGGBB"),
+						startSize: ps.startSize,
+						endSize: ps.endSize,
+						speed: ps.speed,
+						angle: ps.angle,
+						gravity: { x: ps.gravity.x, y: ps.gravity.y },
+						file: ps.file ? ps.file.name : null
+					};
+					if (event.reply) event.reply(null, info);
+				} else {
+					if (event.reply) event.reply(null, { hasParticleSystem: false });
+				}
+			} else {
+				if (event.reply) event.reply(new Error("Node not found"));
+			}
+		} else {
+			if (event.reply) event.reply(new Error(`Unknown VFX action: ${action}`));
+		}
 	},
 };

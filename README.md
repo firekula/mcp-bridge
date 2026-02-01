@@ -17,6 +17,18 @@
 - **资产管理**: 创建、删除、移动、获取资源信息
 - **实时日志**: 提供详细的操作日志记录和展示
 - **自动启动**: 支持编辑器启动时自动开启服务
+- **编辑器管理**: 获取和设置选中对象，刷新编辑器
+- **游戏对象查找**: 根据条件查找场景中的节点
+- **材质管理**: 创建和管理材质资源
+- **纹理管理**: 创建和管理纹理资源
+- **菜单项执行**: 执行 Cocos Creator 编辑器菜单项
+- **代码编辑增强**: 应用文本编辑操作到文件
+- **控制台读取**: 读取编辑器控制台输出
+- **脚本验证**: 验证脚本语法正确性
+- **全局搜索**: 在项目中搜索文本内容
+- **撤销/重做**: 管理编辑器的撤销栈
+- **特效管理**: 创建和修改粒子系统
+- **工具说明**: 测试面板提供详细的工具描述和参数说明
 
 ## 安装与使用
 
@@ -172,6 +184,105 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `nodeId`: 节点 ID（用于 `create` 和 `update` 操作）
     - `parentId`: 父节点 ID（用于 `instantiate` 操作）
 
+### 14. manage_editor
+
+- **描述**: 管理编辑器
+- **参数**:
+    - `action`: 操作类型（`get_selection`, `set_selection`, `refresh_editor`）
+    - `target`: 目标类型（`node`, `asset`）（用于 `set_selection` 操作）
+    - `properties`: 操作属性
+        - `nodes`: 节点 UUID 数组（用于 `set_selection` 操作）
+        - `assets`: 资源 UUID 数组（用于 `set_selection` 操作）
+
+### 15. find_gameobjects
+
+- **描述**: 查找游戏对象
+- **参数**:
+    - `conditions`: 查找条件
+        - `name`: 节点名称（包含匹配）
+        - `tag`: 节点标签
+        - `component`: 组件类型
+        - `active`: 激活状态
+    - `recursive`: 是否递归查找（默认：true）
+
+### 16. manage_material
+
+- **描述**: 管理材质
+- **参数**:
+    - `action`: 操作类型（`create`, `delete`, `get_info`）
+    - `path`: 材质路径，如 `db://assets/materials/NewMaterial.mat`
+    - `properties`: 材质属性（用于 `create` 操作）
+        - `uniforms`: 材质 uniforms
+
+### 17. manage_texture
+
+- **描述**: 管理纹理
+- **参数**:
+    - `action`: 操作类型（`create`, `delete`, `get_info`）
+    - `path`: 纹理路径，如 `db://assets/textures/NewTexture.png`
+    - `properties`: 纹理属性（用于 `create` 操作）
+        - `width`: 宽度
+        - `height`: 高度
+        - `native`: 原生路径
+
+### 18. execute_menu_item
+
+- **描述**: 执行菜单项
+- **参数**:
+    - `menuPath`: 菜单项路径，如 `Assets/Create/Folder`
+
+### 19. apply_text_edits
+
+- **描述**: 应用文本编辑
+- **参数**:
+    - `filePath`: 文件路径，如 `db://assets/scripts/TestScript.ts`
+    - `edits`: 编辑操作列表
+        - `type`: 操作类型（`insert`, `delete`, `replace`）
+        - `position`: 插入位置（用于 `insert` 操作）
+        - `start`: 开始位置（用于 `delete` 和 `replace` 操作）
+        - `end`: 结束位置（用于 `delete` 和 `replace` 操作）
+        - `text`: 文本内容（用于 `insert` 和 `replace` 操作）
+
+### 20. read_console
+
+- **描述**: 读取控制台
+- **参数**:
+    - `limit`: 输出限制（可选）
+    - `type`: 输出类型（`log`, `error`, `warn`）（可选）
+
+### 21. validate_script
+
+- **描述**: 验证脚本
+- **参数**:
+    - `filePath`: 脚本路径，如 `db://assets/scripts/TestScript.ts`
+
+### 22. find_in_file
+
+- **描述**: 全局文件搜索
+- **参数**:
+    - `query`: 搜索关键词
+    - `extensions`: 文件后缀列表 (可选，默认 `['.js', '.ts', '.json', '.fire', '.prefab', '.xml', '.txt', '.md']`)
+    - `includeSubpackages`: 是否搜索子包 (可选，默认 true)
+
+### 23. manage_undo
+
+- **描述**: 撤销/重做管理
+- **参数**:
+    - `action`: 操作类型 (`undo`, `redo`, `begin_group`, `end_group`, `cancel_group`)
+    - `description`: 撤销组描述 (用于 `begin_group`)
+
+### 24. manage_vfx
+
+- **描述**: 特效(粒子)管理
+- **参数**:
+    - `action`: 操作类型 (`create`, `update`, `get_info`)
+    - `nodeId`: 节点 UUID (用于 `update`, `get_info`)
+    - `name`: 节点名称 (用于 `create`)
+    - `parentId`: 父节点 UUID (用于 `create`)
+    - `properties`: 粒子属性对象
+        - `duration`, `emissionRate`, `life`, `lifeVar`, `startColor`, `endColor`
+        - `startSize`, `endSize`, `speed`, `angle`, `gravity`, `file` (plist/texture)
+
 ## 技术实现
 
 ### 架构设计
@@ -228,6 +339,23 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - HTTP 服务会占用指定端口，请确保端口未被其他程序占用
 - 插件会自动标记场景为"已修改"，请注意保存场景
 - 不同版本的 Cocos Creator 可能会有 API 差异，请根据实际情况调整
+
+## 自动化测试
+
+本项目包含一套自动化测试脚本，用于验证插件的核心功能（连接性、节点操作、组件管理、资源管理等）。
+
+### 运行测试
+
+前提：
+1. 确保 Cocos Creator 编辑器已打开，且 MCP Bridge 插件已启动（HTTP 服务运行中）。
+2. 确保命令行所在路径为项目根目录。
+
+运行命令：
+```bash
+node packages/mcp-bridge/test/run_tests.js
+```
+
+测试脚本将自动执行一系列操作，并在控制台输出测试结果。如有报错，请查看控制台详细日志。
 
 ## 贡献
 
