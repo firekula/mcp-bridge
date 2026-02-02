@@ -68,23 +68,34 @@ module.exports = {
 
 	"update-node-transform": function (event, args) {
 		const { id, x, y, scaleX, scaleY, color } = args;
+		Editor.log(`[scene-script] update-node-transform called for ${id} with args: ${JSON.stringify(args)}`);
+
 		let node = cc.engine.getInstanceById(id);
 
 		if (node) {
-			if (x !== undefined) node.x = x;
-			if (y !== undefined) node.y = y;
-			if (scaleX !== undefined) node.scaleX = scaleX;
-			if (scaleY !== undefined) node.scaleY = scaleY;
+			Editor.log(`[scene-script] Node found: ${node.name}, Current Pos: (${node.x}, ${node.y})`);
+
+			if (x !== undefined) {
+				node.x = Number(x); // 强制转换确保类型正确
+				Editor.log(`[scene-script] Set x to ${node.x}`);
+			}
+			if (y !== undefined) {
+				node.y = Number(y);
+				Editor.log(`[scene-script] Set y to ${node.y}`);
+			}
+			if (scaleX !== undefined) node.scaleX = Number(scaleX);
+			if (scaleY !== undefined) node.scaleY = Number(scaleY);
 			if (color) {
-				// color 格式如 "#FF0000"
 				node.color = new cc.Color().fromHEX(color);
 			}
 
 			Editor.Ipc.sendToMain("scene:dirty");
 			Editor.Ipc.sendToAll("scene:node-changed", { uuid: id });
 
+			Editor.log(`[scene-script] Update complete. New Pos: (${node.x}, ${node.y})`);
 			if (event.reply) event.reply(null, "Transform updated");
 		} else {
+			Editor.error(`[scene-script] Node not found: ${id}`);
 			if (event.reply) event.reply(new Error("Node not found"));
 		}
 	},
@@ -308,7 +319,7 @@ module.exports = {
 	},
 
 	"instantiate-prefab": function (event, args) {
-		const { prefabPath, parentId } = args;
+		const { prefabUuid, parentId } = args;
 		const scene = cc.director.getScene();
 
 		if (!scene) {
@@ -316,8 +327,14 @@ module.exports = {
 			return;
 		}
 
-		// 加载预制体资源
-		cc.loader.loadRes(prefabPath.replace("db://assets/", "").replace(".prefab", ""), cc.Prefab, (err, prefab) => {
+		if (!prefabUuid) {
+			if (event.reply) event.reply(new Error("Prefab UUID is required."));
+			return;
+		}
+
+		// 使用 cc.assetManager.loadAny 通过 UUID 加载 (Cocos 2.4+)
+		// 如果是旧版，可能需要 cc.loader.load({uuid: ...})，但在 2.4 环境下 assetManager 更推荐
+		cc.assetManager.loadAny(prefabUuid, (err, prefab) => {
 			if (err) {
 				if (event.reply) event.reply(new Error(`Failed to load prefab: ${err.message}`));
 				return;

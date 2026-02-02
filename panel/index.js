@@ -86,6 +86,14 @@ Editor.Panel.extend({
 			els.result.value = "";
 		});
 		els.testBtn.addEventListener("confirm", () => this.runTest(els));
+		// 添加探查功能
+		const probeBtn = root.querySelector("#probeApisBtn");
+		if (probeBtn) {
+			probeBtn.addEventListener("confirm", () => {
+				Editor.Ipc.sendToMain("mcp-bridge:inspect-apis");
+				els.result.value = "Probe command sent. Check console logs.";
+			});
+		}
 
 		// 5. 【修复】拖拽逻辑
 		if (els.resizer && els.left) {
@@ -141,10 +149,10 @@ Editor.Panel.extend({
 			els.toolDescription.textContent = "选择工具查看说明";
 			return;
 		}
-		
+
 		let description = tool.description || "无描述";
 		let inputSchema = tool.inputSchema;
-		
+
 		let details = [];
 		if (inputSchema && inputSchema.properties) {
 			details.push("参数说明:");
@@ -159,7 +167,7 @@ Editor.Panel.extend({
 				details.push(propDesc);
 			}
 		}
-		
+
 		els.toolDescription.innerHTML = `${description}<br><br>${details.join('<br>')}`;
 	},
 

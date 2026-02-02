@@ -2,6 +2,7 @@
 
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
 
 let logBuffer = []; // 存储所有日志
 let mcpServer = null;
@@ -12,6 +13,7 @@ let serverConfig = {
 };
 
 // 封装日志函数，同时发送给面板和编辑器控制台
+// 封装日志函数，同时发送给面板和编辑器控制台
 function addLog(type, message) {
 	const logEntry = {
 		time: new Date().toLocaleTimeString(),
@@ -20,11 +22,18 @@ function addLog(type, message) {
 	};
 	logBuffer.push(logEntry);
 	Editor.Ipc.sendToPanel("mcp-bridge", "mcp-bridge:on-log", logEntry);
-	// 【修改】移除 Editor.log，保持编辑器控制台干净
-	// 仅在非常严重的系统错误时才输出到编辑器
+
+	// 【修改】确保所有日志都输出到编辑器控制台，以便用户查看
 	if (type === "error") {
-		Editor.error(`[MCP] ${message}`); // 如果你完全不想在编辑器看，可以注释掉
+		Editor.error(`[MCP] ${message}`);
+	} else if (type === "warn") {
+		Editor.warn(`[MCP] ${message}`);
+	} else {
 	}
+}
+
+function getLogContent() {
+	return logBuffer.map(entry => `[${entry.time}] [${entry.type}] ${entry.content}`).join('\n');
 }
 
 const getNewSceneTemplate = () => {
@@ -492,6 +501,41 @@ module.exports = {
 						// 明确返回成功结构
 						res.writeHead(200);
 						return res.end(JSON.stringify({ tools: tools }));
+						res.writeHead(200);
+						return res.end(JSON.stringify({ tools: tools }));
+					}
+					if (url === "/list-resources") {
+						const resources = this.getResourcesList();
+						addLog("info", `AI Client requested resource list`);
+						res.writeHead(200);
+						return res.end(JSON.stringify({ resources: resources }));
+					}
+					if (url === "/read-resource") {
+						try {
+							const { uri } = JSON.parse(body || "{}");
+							addLog("mcp", `READ -> [${uri}]`);
+							this.handleReadResource(uri, (err, content) => {
+								if (err) {
+									addLog("error", `读取失败: ${err}`);
+									res.writeHead(500);
+									return res.end(JSON.stringify({ error: err }));
+								}
+								addLog("success", `读取成功: ${uri}`);
+								res.writeHead(200);
+								// 返回 MCP Resource 格式: { contents: [{ uri, mimeType, text }] }
+								res.end(JSON.stringify({
+									contents: [{
+										uri: uri,
+										mimeType: "application/json",
+										text: typeof content === 'string' ? content : JSON.stringify(content)
+									}]
+								}));
+							});
+						} catch (e) {
+							res.writeHead(500);
+							res.end(JSON.stringify({ error: e.message }));
+						}
+						return;
 					}
 					if (url === "/call-tool") {
 						try {
@@ -577,7 +621,67 @@ module.exports = {
 		}
 	},
 
-	// 统一处理逻辑，方便日志记录
+	getResourcesList() {
+		return [
+			{
+				uri: "cocos://hierarchy",
+				name: "Scene Hierarchy",
+				description: "当前场景层级的 JSON 快照",
+				mimeType: "application/json"
+			},
+			{
+				uri: "cocos://selection",
+				name: "Current Selection",
+				description: "当前选中节点的 UUID 列表",
+				mimeType: "application/json"
+			},
+			{
+				uri: "cocos://logs/latest",
+				name: "Editor Logs",
+				description: "最新的编辑器日志 (内存缓存)",
+				mimeType: "text/plain"
+			}
+		];
+	},
+
+	handleReadResource(uri, callback) {
+		let parsed;
+		try {
+			parsed = new URL(uri);
+		} catch (e) {
+			return callback(`Invalid URI: ${uri}`);
+		}
+
+		if (parsed.protocol !== "cocos:") {
+			return callback(`Unsupported protocol: ${parsed.protocol}`);
+		}
+
+		const type = parsed.hostname; // hierarchy, selection, logs
+
+		switch (type) {
+			case "hierarchy":
+				// 注意: query-hierarchy 是异步的
+				Editor.Ipc.sendToPanel("scene", "scene:query-hierarchy", (err, sceneId, hierarchy) => {
+					if (err) return callback(err);
+					callback(null, JSON.stringify(hierarchy, null, 2));
+				});
+				break;
+
+			case "selection":
+				const selection = Editor.Selection.curSelection("node");
+				callback(null, JSON.stringify(selection));
+				break;
+
+			case "logs":
+				callback(null, getLogContent());
+				break;
+
+			default:
+				callback(`Resource not found: ${uri}`);
+				break;
+		}
+	},
+
 	handleMcpCall(name, args, callback) {
 		if (isSceneBusy && (name === "save_scene" || name === "create_node")) {
 			return callback("Editor is busy (Processing Scene), please wait a moment.");
@@ -621,37 +725,15 @@ module.exports = {
 				break;
 
 			case "update_node_transform":
-				const { id, x, y, scaleX, scaleY, color } = args;
-				// 将多个属性修改打包到一个 Undo 组中
-				Editor.Ipc.sendToPanel("scene", "scene:undo-record", "Transform Update");
-
-				try {
-					// 注意：Cocos Creator 属性类型通常首字母大写，如 'Float', 'String', 'Boolean'
-					// 也有可能支持 'Number'，但 'Float' 更保险
-					if (x !== undefined) Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "x", type: "Float", value: x, isSubProp: false });
-					if (y !== undefined) Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "y", type: "Float", value: y, isSubProp: false });
-					if (scaleX !== undefined) Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "scaleX", type: "Float", value: scaleX, isSubProp: false });
-					if (scaleY !== undefined) Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "scaleY", type: "Float", value: scaleY, isSubProp: false });
-					if (color) {
-						// 颜色稍微复杂，传递 hex 字符串可能需要 Color 对象转换，但 set-property 也许可以直接接受 info
-						// 安全起见，颜色还是走 scene-script 或者尝试直接 set-property
-						// 这里的 color 是 Hex String。尝试传 String 让编辑器解析? 
-						// 通常编辑器需要 cc.Color 对象或 {r,g,b,a}
-						// 暂时保留 color 通过 scene-script 处理? 或者跳过?
-						// 为了保持一致性，还是走 scene-script 更新颜色，但这样颜色可能无法 undo。
-						// 改进：使用 scene script 处理颜色，但尝试手动 record?
-						// 暂且忽略颜色的 Undo，先保证 Transform 的 Undo。
-						Editor.Scene.callSceneScript("mcp-bridge", "update-node-transform", { id, color }, (err) => {
-							if (err) addLog("warn", "Color update failed or partial");
-						});
+				// 直接调用场景脚本更新属性，绕过可能导致 "Unknown object" 的复杂 Undo 系统
+				Editor.Scene.callSceneScript("mcp-bridge", "update-node-transform", args, (err, result) => {
+					if (err) {
+						addLog("error", `Transform update failed: ${err}`);
+						callback(err);
+					} else {
+						callback(null, "Transform updated");
 					}
-
-					Editor.Ipc.sendToPanel("scene", "scene:undo-commit");
-					callback(null, "Transform updated");
-				} catch (e) {
-					Editor.Ipc.sendToPanel("scene", "scene:undo-cancel");
-					callback(e);
-				}
+				});
 				break;
 
 			case "create_scene":
@@ -797,23 +879,21 @@ module.exports = {
 
 	// 管理脚本文件
 	manageScript(args, callback) {
-		const { action, path, content } = args;
+		const { action, path: scriptPath, content } = args;
 
 		switch (action) {
 			case "create":
-				if (Editor.assetdb.exists(path)) {
-					return callback(`Script already exists at ${path}`);
+				if (Editor.assetdb.exists(scriptPath)) {
+					return callback(`Script already exists at ${scriptPath}`);
 				}
 				// 确保父目录存在
-				const fs = require("fs");
-				const pathModule = require("path");
-				const absolutePath = Editor.assetdb.urlToFspath(path);
-				const dirPath = pathModule.dirname(absolutePath);
+				const absolutePath = Editor.assetdb.urlToFspath(scriptPath);
+				const dirPath = path.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
 				Editor.assetdb.create(
-					path,
+					scriptPath,
 					content ||
 					`const { ccclass, property } = cc._decorator;
 
@@ -834,35 +914,50 @@ export default class NewScript extends cc.Component {
     update (dt) {}
 }`,
 					(err) => {
-						callback(err, err ? null : `Script created at ${path}`);
+						callback(err, err ? null : `Script created at ${scriptPath}`);
 					},
 				);
 				break;
 
 			case "delete":
-				if (!Editor.assetdb.exists(path)) {
-					return callback(`Script not found at ${path}`);
+				if (!Editor.assetdb.exists(scriptPath)) {
+					return callback(`Script not found at ${scriptPath}`);
 				}
-				Editor.assetdb.delete([path], (err) => {
-					callback(err, err ? null : `Script deleted at ${path}`);
+				Editor.assetdb.delete([scriptPath], (err) => {
+					callback(err, err ? null : `Script deleted at ${scriptPath}`);
 				});
 				break;
 
 			case "read":
-				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
-					if (err) {
-						return callback(`Failed to get script info: ${err}`);
-					}
-					Editor.assetdb.loadAny(path, (err, content) => {
-						callback(err, err ? null : content);
-					});
-				});
+				// 使用 fs 读取，绕过 assetdb.loadAny
+				const readFsPath = Editor.assetdb.urlToFspath(scriptPath);
+				if (!readFsPath || !fs.existsSync(readFsPath)) {
+					return callback(`Script not found at ${scriptPath}`);
+				}
+				try {
+					const content = fs.readFileSync(readFsPath, "utf-8");
+					callback(null, content);
+				} catch (e) {
+					callback(`Failed to read script: ${e.message}`);
+				}
 				break;
 
 			case "write":
-				Editor.assetdb.create(path, content, (err) => {
-					callback(err, err ? null : `Script updated at ${path}`);
-				});
+				// 使用 fs 写入 + refresh，确保覆盖成功
+				const writeFsPath = Editor.assetdb.urlToFspath(scriptPath);
+				if (!writeFsPath) {
+					return callback(`Invalid path: ${scriptPath}`);
+				}
+
+				try {
+					fs.writeFileSync(writeFsPath, content, "utf-8");
+					Editor.assetdb.refresh(scriptPath, (err) => {
+						if (err) addLog("warn", `Refresh failed after write: ${err}`);
+						callback(null, `Script updated at ${scriptPath}`);
+					});
+				} catch (e) {
+					callback(`Failed to write script: ${e.message}`);
+				}
 				break;
 
 			default:
@@ -936,18 +1031,20 @@ export default class NewScript extends cc.Component {
 				});
 				break;
 
+
 			case "get_info":
 				try {
 					if (!Editor.assetdb.exists(path)) {
 						return callback(`Asset not found: ${path}`);
 					}
 					const uuid = Editor.assetdb.urlToUuid(path);
-					// Return basic info constructed manually to avoid API compatibility issues
-					callback(null, {
-						url: path,
-						uuid: uuid,
-						exists: true
-					});
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					if (info) {
+						callback(null, info);
+					} else {
+						// Fallback if API returns nothing but asset exists
+						callback(null, { url: path, uuid: uuid, exists: true });
+					}
 				} catch (e) {
 					callback(`Error getting asset info: ${e.message}`);
 				}
@@ -1021,9 +1118,13 @@ export default class NewScript extends cc.Component {
 				break;
 
 			case "get_info":
-				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
-					callback(err, err ? null : info);
-				});
+				if (Editor.assetdb.exists(path)) {
+					const uuid = Editor.assetdb.urlToUuid(path);
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					callback(null, info || { url: path, uuid: uuid, exists: true });
+				} else {
+					callback(`Scene not found: ${path}`);
+				}
 				break;
 
 			default:
@@ -1034,51 +1135,70 @@ export default class NewScript extends cc.Component {
 
 	// 预制体管理
 	prefabManagement(args, callback) {
-		const { action, path, nodeId, parentId } = args;
+		const { action, path: prefabPath, nodeId, parentId } = args;
 
 		switch (action) {
 			case "create":
 				if (!nodeId) {
 					return callback(`Node ID is required for create operation`);
 				}
-				if (Editor.assetdb.exists(path)) {
-					return callback(`Prefab already exists at ${path}`);
+				if (Editor.assetdb.exists(prefabPath)) {
+					return callback(`Prefab already exists at ${prefabPath}`);
 				}
 				// 确保父目录存在
-				const fs = require("fs");
-				const pathModule = require("path");
-				const absolutePath = Editor.assetdb.urlToFspath(path);
-				const dirPath = pathModule.dirname(absolutePath);
+				const absolutePath = Editor.assetdb.urlToFspath(prefabPath);
+				const dirPath = path.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
-				// 从节点创建预制体
-				Editor.Ipc.sendToMain("scene:create-prefab", nodeId, path);
-				callback(null, `Command sent: Creating prefab from node ${nodeId} at ${path}`);
+
+				// 解析目标目录和文件名
+				// db://assets/folder/PrefabName.prefab -> db://assets/folder, PrefabName
+				const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf('/'));
+				const fileName = prefabPath.substring(prefabPath.lastIndexOf('/') + 1);
+				const prefabName = fileName.replace('.prefab', '');
+
+				// 1. 重命名节点以匹配预制体名称
+				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
+					id: nodeId,
+					path: "name",
+					type: "String",
+					value: prefabName,
+					isSubProp: false
+				});
+
+				// 2. 发送创建命令 (参数: [uuids], dirPath)
+				// 注意: scene:create-prefab 第三个参数必须是 db:// 目录路径
+				setTimeout(() => {
+					Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [nodeId], targetDir);
+				}, 100); // 稍微延迟以确保重命名生效
+
+				callback(null, `Command sent: Creating prefab from node ${nodeId} at ${targetDir} as ${prefabName}`);
 				break;
 
 			case "update":
 				if (!nodeId) {
 					return callback(`Node ID is required for update operation`);
 				}
-				if (!Editor.assetdb.exists(path)) {
-					return callback(`Prefab not found at ${path}`);
+				if (!Editor.assetdb.exists(prefabPath)) {
+					return callback(`Prefab not found at ${prefabPath}`);
 				}
 				// 更新预制体
-				Editor.Ipc.sendToMain("scene:update-prefab", nodeId, path);
-				callback(null, `Command sent: Updating prefab ${path} from node ${nodeId}`);
+				Editor.Ipc.sendToPanel("scene", "scene:update-prefab", nodeId, prefabPath);
+				callback(null, `Command sent: Updating prefab ${prefabPath} from node ${nodeId}`);
 				break;
 
 			case "instantiate":
-				if (!Editor.assetdb.exists(path)) {
-					return callback(`Prefab not found at ${path}`);
+				if (!Editor.assetdb.exists(prefabPath)) {
+					return callback(`Prefab not found at ${prefabPath}`);
 				}
 				// 实例化预制体
+				const prefabUuid = Editor.assetdb.urlToUuid(prefabPath);
 				Editor.Scene.callSceneScript(
 					"mcp-bridge",
 					"instantiate-prefab",
 					{
-						prefabPath: path,
+						prefabUuid: prefabUuid,
 						parentId: parentId,
 					},
 					callback,
@@ -1086,9 +1206,16 @@ export default class NewScript extends cc.Component {
 				break;
 
 			case "get_info":
-				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
-					callback(err, err ? null : info);
-				});
+				if (Editor.assetdb.exists(prefabPath)) {
+					const uuid = Editor.assetdb.urlToUuid(prefabPath);
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					// 确保返回对象包含 exists: true，以满足测试验证
+					const result = info || { url: prefabPath, uuid: uuid };
+					result.exists = true;
+					callback(null, result);
+				} else {
+					callback(`Prefab not found: ${prefabPath}`);
+				}
 				break;
 
 			default:
@@ -1181,9 +1308,13 @@ export default class NewScript extends cc.Component {
 				});
 				break;
 			case "get_info":
-				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
-					callback(err, err ? null : info);
-				});
+				if (Editor.assetdb.exists(path)) {
+					const uuid = Editor.assetdb.urlToUuid(path);
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					callback(null, info || { url: path, uuid: uuid, exists: true });
+				} else {
+					callback(`Material not found: ${path}`);
+				}
 				break;
 			default:
 				callback(`Unknown material action: ${action}`);
@@ -1230,9 +1361,13 @@ export default class NewScript extends cc.Component {
 				});
 				break;
 			case "get_info":
-				Editor.assetdb.queryInfoByUuid(Editor.assetdb.urlToUuid(path), (err, info) => {
-					callback(err, err ? null : info);
-				});
+				if (Editor.assetdb.exists(path)) {
+					const uuid = Editor.assetdb.urlToUuid(path);
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					callback(null, info || { url: path, uuid: uuid, exists: true });
+				} else {
+					callback(`Texture not found: ${path}`);
+				}
 				break;
 			default:
 				callback(`Unknown texture action: ${action}`);
@@ -1240,62 +1375,66 @@ export default class NewScript extends cc.Component {
 		}
 	},
 
-	// 执行菜单项
-	executeMenuItem(args, callback) {
-		const { menuPath } = args;
-
-		try {
-			// 执行菜单项
-			Editor.Ipc.sendToMain("menu:click", menuPath);
-			callback(null, `Menu item executed: ${menuPath}`);
-		} catch (err) {
-			callback(`Failed to execute menu item: ${err.message}`);
-		}
-	},
 
 	// 应用文本编辑
 	applyTextEdits(args, callback) {
 		const { filePath, edits } = args;
 
-		// 读取文件内容
-		Editor.assetdb.queryInfoByUrl(filePath, (err, info) => {
-			if (err) {
-				callback(`Failed to get file info: ${err.message}`);
-				return;
-			}
+		// 1. 获取文件系统路径
+		const fspath = Editor.assetdb.urlToFspath(filePath);
+		if (!fspath) {
+			return callback(`File not found or invalid URL: ${filePath}`);
+		}
 
-			Editor.assetdb.loadAny(filePath, (err, content) => {
-				if (err) {
-					callback(`Failed to load file: ${err.message}`);
-					return;
-				}
+		const fs = require("fs");
+		if (!fs.existsSync(fspath)) {
+			return callback(`File does not exist: ${fspath}`);
+		}
 
-				// 应用编辑操作
-				let updatedContent = content;
-				edits.forEach((edit) => {
-					switch (edit.type) {
-						case "insert":
-							updatedContent =
-								updatedContent.slice(0, edit.position) +
-								edit.text +
-								updatedContent.slice(edit.position);
-							break;
-						case "delete":
-							updatedContent = updatedContent.slice(0, edit.start) + updatedContent.slice(edit.end);
-							break;
-						case "replace":
-							updatedContent =
-								updatedContent.slice(0, edit.start) + edit.text + updatedContent.slice(edit.end);
-							break;
-					}
-				});
+		try {
+			// 2. 读取
+			let updatedContent = fs.readFileSync(fspath, "utf-8");
 
-				// 写回文件
-				Editor.assetdb.create(filePath, updatedContent, (err) => {
-					callback(err, err ? null : `Text edits applied to ${filePath}`);
-				});
+			// 3. 应用编辑
+			// 必须按倒序应用编辑，否则后续编辑的位置会偏移 (假设edits未排序，这里简单处理，实际上LSP通常建议客户端倒序应用或计算偏移)
+			// 这里假设edits已经按照位置排序或者用户负责，如果需要严谨，应先按 start/position 倒序排序
+			// 简单做个排序保险：
+			const sortedEdits = [...edits].sort((a, b) => {
+				const posA = a.position !== undefined ? a.position : a.start;
+				const posB = b.position !== undefined ? b.position : b.start;
+				return posB - posA; // big to small
 			});
-		});
+
+			sortedEdits.forEach((edit) => {
+				switch (edit.type) {
+					case "insert":
+						updatedContent =
+							updatedContent.slice(0, edit.position) +
+							edit.text +
+							updatedContent.slice(edit.position);
+						break;
+					case "delete":
+						updatedContent = updatedContent.slice(0, edit.start) + updatedContent.slice(edit.end);
+						break;
+					case "replace":
+						updatedContent =
+							updatedContent.slice(0, edit.start) + edit.text + updatedContent.slice(edit.end);
+						break;
+				}
+			});
+
+			// 4. 写入
+			fs.writeFileSync(fspath, updatedContent, "utf-8");
+
+			// 5. 通知编辑器资源变化 (重要)
+			Editor.assetdb.refresh(filePath, (err) => {
+				if (err) addLog("warn", `Refresh failed for ${filePath}: ${err}`);
+				callback(null, `Text edits applied to ${filePath}`);
+			});
+
+		} catch (err) {
+			callback(`Action failed: ${err.message}`);
+		}
 	},
 
 	// 读取控制台
@@ -1338,43 +1477,45 @@ export default class NewScript extends cc.Component {
 	validateScript(args, callback) {
 		const { filePath } = args;
 
-		// 读取脚本内容
-		Editor.assetdb.queryInfoByUrl(filePath, (err, info) => {
-			if (err) {
-				callback(`Failed to get file info: ${err.message}`);
-				return;
-			}
+		// 1. 获取文件系统路径
+		const fspath = Editor.assetdb.urlToFspath(filePath);
+		if (!fspath) {
+			return callback(`File not found or invalid URL: ${filePath}`);
+		}
 
-			Editor.assetdb.loadAny(filePath, (err, content) => {
-				if (err) {
-					callback(`Failed to load file: ${err.message}`);
-					return;
-				}
+		// 2. 检查文件是否存在
+		const fs = require("fs");
+		if (!fs.existsSync(fspath)) {
+			return callback(`File does not exist: ${fspath}`);
+		}
 
+		// 3. 读取内容并验证
+		try {
+			const content = fs.readFileSync(fspath, "utf-8");
+
+			// 对于 JavaScript 脚本，使用 eval 进行简单验证
+			if (filePath.endsWith(".js")) {
+				// 包装在函数中以避免变量污染
+				const wrapper = `(function() { ${content} })`;
 				try {
-					// 对于 JavaScript 脚本，使用 eval 进行简单验证
-					if (filePath.endsWith(".js")) {
-						// 包装在函数中以避免变量污染
-						const wrapper = `(function() { ${content} })`;
-						eval(wrapper);
-					}
-					// 对于 TypeScript 脚本，这里可以添加更复杂的验证逻辑
-
-					callback(null, { valid: true, message: "Script syntax is valid" });
-				} catch (err) {
-					callback(null, { valid: false, message: err.message });
+					new Function(wrapper); // 使用 Function 构造器比 direct eval稍微安全一点点，虽在这个场景下差别不大
+				} catch (syntaxErr) {
+					return callback(null, { valid: false, message: syntaxErr.message });
 				}
-			});
-		});
+			}
+			// 对于 TypeScript，暂不进行复杂编译检查，仅确保文件可读
+
+			callback(null, { valid: true, message: "Script syntax is valid" });
+		} catch (err) {
+			callback(null, { valid: false, message: `Read Error: ${err.message}` });
+		}
 	},
 	// 暴露给 MCP 或面板的 API 封装
 	messages: {
 		"open-test-panel"() {
 			Editor.Panel.open("mcp-bridge");
 		},
-		"get-server-state"(event) {
-			event.reply(null, { config: serverConfig, logs: logBuffer });
-		},
+
 		"toggle-server"(event, port) {
 			if (serverConfig.active) this.stopServer();
 			else this.startServer(port);
@@ -1419,41 +1560,128 @@ export default class NewScript extends cc.Component {
 			this.getProfile().save();
 			addLog("info", `Auto-start set to: ${value}`);
 		},
-	},
 
-	// 验证脚本
-	validateScript(args, callback) {
-		const { filePath } = args;
+		"inspect-apis"() {
+			addLog("info", "[API Inspector] Starting DEEP inspection...");
 
-		// 读取脚本内容
-		Editor.assetdb.queryInfoByUrl(filePath, (err, info) => {
-			if (err) {
-				callback(`Failed to get file info: ${err.message}`);
-				return;
-			}
-
-			Editor.assetdb.loadMeta(info.uuid, (err, content) => {
-				if (err) {
-					callback(`Failed to load file: ${err.message}`);
-					return;
-				}
-
+			// Helper to get function arguments
+			const getArgs = (func) => {
 				try {
-					// 对于 JavaScript 脚本，使用 eval 进行简单验证
-					if (filePath.endsWith('.js')) {
-						// 包装在函数中以避免变量污染
-						const wrapper = `(function() { ${content} })`;
-						eval(wrapper);
+					const str = func.toString();
+					const match = str.match(/function\s.*?\(([^)]*)\)/) || str.match(/.*?\(([^)]*)\)/);
+					if (match) {
+						return match[1].split(",").map(arg => arg.trim()).filter(a => a).join(", ");
 					}
-					// 对于 TypeScript 脚本，这里可以添加更复杂的验证逻辑
+					return `${func.length} args`;
+				} catch (e) {
+					return "?";
+				}
+			};
 
-					callback(null, { valid: true, message: 'Script syntax is valid' });
-				} catch (err) {
-					callback(null, { valid: false, message: err.message });
+			// Helper to inspect an object
+			const inspectObj = (name, obj) => {
+				if (!obj) return { name, exists: false };
+				const props = {};
+				const proto = Object.getPrototypeOf(obj);
+
+				// 组合自身属性和原型属性
+				const allKeys = new Set([...Object.getOwnPropertyNames(obj), ...Object.getOwnPropertyNames(proto || {})]);
+
+				allKeys.forEach(key => {
+					if (key.startsWith("_")) return; // Skip private
+					try {
+						const val = obj[key];
+						if (typeof val === 'function') {
+							props[key] = `func(${getArgs(val)})`;
+						} else {
+							props[key] = typeof val;
+						}
+					} catch (e) { }
+				});
+				return { name, exists: true, props };
+			};
+
+			// 1. Inspect Standard Objects
+			const standardObjects = {
+				"Editor.assetdb": Editor.assetdb,
+				"Editor.Selection": Editor.Selection,
+				"Editor.Ipc": Editor.Ipc,
+				"Editor.Panel": Editor.Panel,
+				"Editor.Scene": Editor.Scene,
+				"Editor.Utils": Editor.Utils,
+				"Editor.remote": Editor.remote
+			};
+
+			const report = {};
+			Object.keys(standardObjects).forEach(key => {
+				report[key] = inspectObj(key, standardObjects[key]);
+			});
+
+			// 2. Check Specific Forum APIs
+			const forumChecklist = [
+				"Editor.assetdb.queryInfoByUuid",
+				"Editor.assetdb.assetInfoByUuid",
+				"Editor.assetdb.move",
+				"Editor.assetdb.createOrSave",
+				"Editor.assetdb.delete",
+				"Editor.assetdb.urlToUuid",
+				"Editor.assetdb.uuidToUrl",
+				"Editor.assetdb.fspathToUrl",
+				"Editor.assetdb.urlToFspath",
+				"Editor.remote.assetdb.uuidToUrl",
+				"Editor.Selection.select",
+				"Editor.Selection.clear",
+				"Editor.Selection.curSelection",
+				"Editor.Selection.curGlobalActivate"
+			];
+
+			const checklistResults = {};
+			forumChecklist.forEach(path => {
+				const parts = path.split(".");
+				let curr = global; // In main process, Editor is global
+				let exists = true;
+				for (const part of parts) {
+					if (curr && curr[part]) {
+						curr = curr[part];
+					} else {
+						exists = false;
+						break;
+					}
+				}
+				checklistResults[path] = exists ? (typeof curr === 'function' ? `Available(${getArgs(curr)})` : "Available") : "Missing";
+			});
+
+			addLog("info", `[API Inspector] Standard Objects:\n${JSON.stringify(report, null, 2)}`);
+			addLog("info", `[API Inspector] Forum Checklist:\n${JSON.stringify(checklistResults, null, 2)}`);
+
+			// 3. Inspect Built-in Package IPCs
+			const ipcReport = {};
+			const builtinPackages = ["scene", "builder", "assets"]; // 核心内置包
+			const fs = require("fs");
+
+			builtinPackages.forEach(pkgName => {
+				try {
+					const pkgPath = Editor.url(`packages://${pkgName}/package.json`);
+					if (pkgPath && fs.existsSync(pkgPath)) {
+						const pkgData = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+						if (pkgData.messages) {
+							ipcReport[pkgName] = Object.keys(pkgData.messages);
+						} else {
+							ipcReport[pkgName] = "No messages defined";
+						}
+					} else {
+						ipcReport[pkgName] = "Package path not found";
+					}
+				} catch (e) {
+					ipcReport[pkgName] = `Error: ${e.message}`;
 				}
 			});
-		});
+
+			addLog("info", `[API Inspector] Built-in IPC Messages:\n${JSON.stringify(ipcReport, null, 2)}`);
+		},
 	},
+
+
 
 	// 全局文件搜索
 	findInFile(args, callback) {

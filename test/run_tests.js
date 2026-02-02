@@ -229,53 +229,143 @@ const tests = {
         log('success', `编辑器选中状态已更新为节点 ${nodeId}`);
     },
 
-    async testAssetManagement() {
-        log('group', '资源管理测试');
-        const scriptPath = 'db://assets/temp_auto_test.js';
+    async testScriptOperations() {
+        log('group', '脚本读写与验证测试 (FS Mode)');
+        const scriptPath = 'db://assets/auto_test_script.js';
+        const initialContent = 'cc.log("Initial Content");';
+        const updatedContent = 'cc.log("Updated Content");';
 
         // 1. 创建脚本
         try {
+            log('info', `创建脚本: ${scriptPath}`);
             await callTool('manage_script', {
                 action: 'create',
                 path: scriptPath,
-                content: 'cc.log("Test Script");'
+                content: initialContent
             });
-            log('success', `已创建临时资源: ${scriptPath}`);
+            log('success', `脚本已创建`);
         } catch (e) {
             if (e.message.includes('exists')) {
-                log('warn', `资源已存在，正在尝试先删除...`);
+                log('warn', `脚本已存在，尝试删除重建...`);
                 await callTool('manage_asset', { action: 'delete', path: scriptPath });
-                // 重试创建
-                await callTool('manage_script', { action: 'create', path: scriptPath, content: 'cc.log("Test Script");' });
+                await callTool('manage_script', { action: 'create', path: scriptPath, content: initialContent });
             } else {
                 throw e;
             }
         }
 
-        // 2. 获取信息
-        // 等待 AssetDB 刷新 (导入需要时间)
-        log('info', '等待 3 秒以进行资源导入...');
-        await new Promise(r => setTimeout(r, 3000));
+        // 等待资源导入
+        await new Promise(r => setTimeout(r, 2000));
 
-        log('info', `获取资源信息: ${scriptPath}`);
-        const info = await callTool('manage_asset', { action: 'get_info', path: scriptPath });
-        log('info', `资源信息: ${JSON.stringify(info)}`);
+        // 2. 验证读取 (FS Read)
+        log('info', `验证读取内容...`);
+        const readContent = await callTool('manage_script', { action: 'read', path: scriptPath });
+        // 注意：Content 可能会包含一些编辑器自动添加的 meta 信息或者换行，可以宽松匹配
+        assert(readContent && readContent.includes("Initial Content"), `读取内容不匹配。实际: ${readContent}`);
+        log('success', `脚本读取成功`);
 
-        assert(info && info.url === scriptPath, "无法获取资源信息");
-        log('success', `已验证资源信息`);
+        // 3. 验证写入 (FS Write + Refresh)
+        log('info', `验证写入内容...`);
+        await callTool('manage_script', { action: 'write', path: scriptPath, content: updatedContent });
 
-        // 3. 删除资源
+        // 等待刷新
+        await new Promise(r => setTimeout(r, 1000));
+
+        const readUpdated = await callTool('manage_script', { action: 'read', path: scriptPath });
+        assert(readUpdated && readUpdated.includes("Updated Content"), `写入后读取内容不匹配。实际: ${readUpdated}`);
+        log('success', `脚本写入成功`);
+
+        // 4. 验证脚本语法 (Validation)
+        log('info', `验证脚本语法...`);
+        const validation = await callTool('validate_script', { filePath: scriptPath });
+        log('info', `验证结果: ${JSON.stringify(validation)}`);
+        assert(validation && validation.valid === true, "脚本验证失败");
+        log('success', `脚本语法验证通过`);
+
+        // 5. 清理
         await callTool('manage_asset', { action: 'delete', path: scriptPath });
+        log('success', `清理临时脚本`);
+    },
 
-        // 验证删除 (get_info 应该失败或返回 null/报错，但我们检查工具响应)
+    async testPrefabOperations(sourceNodeId) {
+        log('group', '预制体管理测试 (UUID Mode)');
+        const prefabPath = 'db://assets/AutoTestPrefab.prefab';
+
+        // 确保清理旧的
         try {
-            const infoDeleted = await callTool('manage_asset', { action: 'get_info', path: scriptPath });
-            // 如果返回了信息且 exists 为 true，说明没删掉
-            assert(!(infoDeleted && infoDeleted.exists), "资源本应被删除，但仍然存在");
-        } catch (e) {
-            // 如果报错（如 Asset not found），则符合预期
-            log('success', `已验证资源删除`);
+            await callTool('manage_asset', { action: 'delete', path: prefabPath });
+        } catch (e) { }
+
+        // 1. 创建预制体
+        log('info', `从节点 ${sourceNodeId} 创建预制体: ${prefabPath}`);
+        await callTool('prefab_management', {
+            action: 'create',
+            path: prefabPath,
+            nodeId: sourceNodeId
+        });
+
+        // 等待预制体生成和导入 (使用轮询机制)
+        log('info', '等待预制体生成...');
+        let prefabInfo = null;
+
+        // 每 200ms 检查一次，最多尝试 30 次 (6秒)
+        for (let i = 0; i < 30; i++) {
+            try {
+                prefabInfo = await callTool('prefab_management', { action: 'get_info', path: prefabPath });
+                if (prefabInfo && prefabInfo.exists) {
+                    break;
+                }
+            } catch (e) { }
+            await new Promise(r => setTimeout(r, 200));
         }
+
+        // 最终断言
+        assert(prefabInfo && prefabInfo.exists, "预制体创建失败或未找到 (超时)");
+        log('success', `预制体创建成功: ${prefabInfo.uuid}`);
+
+        // 2. 实例化预制体 (使用 UUID 加载)
+        log('info', `尝试实例化预制体 (UUID: ${prefabInfo.uuid})`);
+        const result = await callTool('prefab_management', {
+            action: 'instantiate',
+            path: prefabPath
+        });
+        log('info', `实例化结果: ${JSON.stringify(result)}`);
+        // 结果通常是一条成功消息字符串
+        assert(result && result.toLowerCase().includes('success'), "实例化失败");
+        log('success', `预制体实例化成功`);
+
+        // 3. 清理预制体
+        await callTool('manage_asset', { action: 'delete', path: prefabPath });
+        log('success', `清理临时预制体`);
+    },
+
+    async testResources() {
+        log('group', 'MCP Resource 协议测试');
+
+        // 1. 列出资源
+        log('info', '请求资源列表 (/list-resources)');
+        const listRes = await request('POST', '/list-resources');
+        log('info', `资源列表响应: ${JSON.stringify(listRes)}`);
+        assert(listRes && listRes.resources && Array.isArray(listRes.resources), "资源列表格式错误");
+        const hasHierarchy = listRes.resources.find(r => r.uri === 'cocos://hierarchy');
+        assert(hasHierarchy, "未找到 cocos://hierarchy 资源");
+        log('success', `成功获取资源列表 (包含 ${listRes.resources.length} 个资源)`);
+
+        // 2. 读取资源: Hierarchy
+        log('info', '读取资源: cocos://hierarchy');
+        const hierarchyRes = await request('POST', '/read-resource', { uri: 'cocos://hierarchy' });
+        assert(hierarchyRes && hierarchyRes.contents && hierarchyRes.contents.length > 0, "读取 Hierarchy 失败");
+        const hierarchyContent = hierarchyRes.contents[0].text;
+        assert(hierarchyContent && hierarchyContent.startsWith('['), "Hierarchy 内容应该是 JSON 数组");
+        log('success', `成功读取场景层级数据`);
+
+        // 3. 读取资源: Logs
+        log('info', '读取资源: cocos://logs/latest');
+        const logsRes = await request('POST', '/read-resource', { uri: 'cocos://logs/latest' });
+        assert(logsRes && logsRes.contents && logsRes.contents.length > 0, "读取 Logs 失败");
+        const logsContent = logsRes.contents[0].text;
+        assert(typeof logsContent === 'string', "日志内容应该是字符串");
+        log('success', `成功读取编辑器日志`);
     }
 };
 
@@ -293,7 +383,13 @@ async function run() {
 
         await tests.testEditorSelection(nodeId);
 
-        await tests.testAssetManagement();
+        await tests.testEditorSelection(nodeId);
+
+        await tests.testScriptOperations();
+
+        await tests.testPrefabOperations(nodeId);
+
+        await tests.testResources();
 
         // 清理：我们在测试中已经尽可能清理了，但保留节点可能有助于观察结果
         // 这里只是打印完成消息
