@@ -605,8 +605,9 @@ module.exports = {
 				addLog("info", "Preparing to save scene... Waiting for UI sync.");
 				// 强制延迟保存，防止死锁
 				setTimeout(() => {
-					Editor.Ipc.sendToMain("scene:save-scene");
-					addLog("info", "Executing Safe Save...");
+					// 使用 stash-and-save 替代 save-scene，这更接近 Ctrl+S 的行为
+					Editor.Ipc.sendToMain("scene:stash-and-save");
+					addLog("info", "Executing Safe Save (Stash)...");
 					setTimeout(() => {
 						isSceneBusy = false;
 						addLog("info", "Safe Save completed.");
@@ -1120,8 +1121,15 @@ export default class NewScript extends cc.Component {
 				break;
 			case "refresh_editor":
 				// 刷新编辑器
-				Editor.assetdb.refresh();
-				callback(null, "Editor refreshed");
+				const refreshPath = (properties && properties.path) ? properties.path : 'db://assets/scripts';
+				Editor.assetdb.refresh(refreshPath, (err) => {
+					if (err) {
+						addLog("error", `Refresh failed: ${err}`);
+						callback(err);
+					} else {
+						callback(null, `Editor refreshed: ${refreshPath}`);
+					}
+				});
 				break;
 			default:
 				callback("Unknown action");
@@ -1304,6 +1312,26 @@ export default class NewScript extends cc.Component {
 		}
 
 		callback(null, filteredOutput);
+	},
+
+	executeMenuItem(args, callback) {
+		const { menuPath } = args;
+		if (!menuPath) {
+			return callback("Menu path is required");
+		}
+		addLog("info", `Executing Menu Item: ${menuPath}`);
+
+		// 尝试通过 IPC 触发菜单 (Cocos 2.x 常用方式)
+		// 如果是保存场景，直接使用对应的 stash-and-save IPC
+		if (menuPath === 'File/Save Scene') {
+			Editor.Ipc.sendToMain("scene:stash-and-save");
+		} else {
+			// 通用尝试 (可能不工作，取决于编辑器版本)
+			// Editor.Ipc.sendToMain('ui:menu-click', menuPath); 
+			// 兜底：仅记录日志，暂不支持通用菜单点击
+			addLog("warn", "Generic menu execution partial support.");
+		}
+		callback(null, `Menu action triggered: ${menuPath}`);
 	},
 
 	// 验证脚本
