@@ -1,7 +1,7 @@
 {
 	"name": "mcp-bridge",
 	"version": "1.0.0",
-	"description": "Cocos Creator MCP Bridge",
+	"description": "Cocos Creator MCP 桥接插件",
 	"author": "Firekula",
 	"main": "main.js",
 	"scene-script": "scene-script.js",

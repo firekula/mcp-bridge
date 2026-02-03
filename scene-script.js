@@ -184,7 +184,7 @@ module.exports = {
                         if (typeof value === 'string') {
                             targetNode = cc.engine.getInstanceById(value);
 
-                            // Fallback for compressed UUIDs
+                            // 针对压缩 UUID 的回退处理
                             if (!targetNode && Editor.Utils && Editor.Utils.UuidUtils) {
                                 try {
                                     const decompressed = Editor.Utils.UuidUtils.decompressUuid(value);
@@ -252,7 +252,7 @@ module.exports = {
                             }
                         }
                     } catch (e) {
-                        // Ignore type check errors
+                        // 忽略类型检查错误
                     }
 
                     component[key] = finalValue;
@@ -399,20 +399,20 @@ module.exports = {
                         for (const key in c) {
                             if (typeof c[key] !== "function" && !key.startsWith("_") && c[key] !== undefined) {
                                 try {
-                                    // Safe serialization check
+                                    // 安全序列化检查
                                     const val = c[key];
                                     if (val === null || val === undefined) {
                                         properties[key] = val;
                                         continue;
                                     }
 
-                                    // Primitives are safe
+                                    // 基础类型是安全的
                                     if (typeof val !== 'object') {
                                         properties[key] = val;
                                         continue;
                                     }
 
-                                    // Special Cocos Types
+                                    // 特殊 Cocos 类型
                                     if (val instanceof cc.ValueType) {
                                         properties[key] = val.toString();
                                     } else if (val instanceof cc.Asset) {
@@ -422,14 +422,14 @@ module.exports = {
                                     } else if (val instanceof cc.Component) {
                                         properties[key] = `Component(${val.name}<${val.__typename}>)`;
                                     } else {
-                                        // Arrays and Plain Objects
-                                        // Attempt to strip to pure JSON data to avoid IPC errors with Native/Circular objects
+                                        // 数组和普通对象
+                                        // 尝试转换为纯 JSON 数据以避免 IPC 错误（如包含原生对象/循环引用）
                                         try {
                                             const jsonStr = JSON.stringify(val);
-                                            // Ensure we don't pass the original object reference
+                                            // 确保不传递原始对象引用
                                             properties[key] = JSON.parse(jsonStr);
                                         } catch (e) {
-                                            // If JSON fails (e.g. circular), format as string
+                                            // 如果 JSON 失败（例如循环引用），格式化为字符串
                                             properties[key] = `[Complex Object: ${val.constructor ? val.constructor.name : typeof val}]`;
                                         }
                                     }
@@ -591,6 +591,28 @@ module.exports = {
 
         if (event.reply) {
             event.reply(null, result);
+        }
+    },
+
+    "delete-node": function (event, args) {
+        const { uuid } = args;
+        const node = cc.engine.getInstanceById(uuid);
+        if (node) {
+            const parent = node.parent;
+            node.destroy();
+            Editor.Ipc.sendToMain("scene:dirty");
+            // 延迟通知以确保节点已被移除
+            setTimeout(() => {
+                if (parent) {
+                    Editor.Ipc.sendToAll("scene:node-changed", { uuid: parent.uuid });
+                }
+                // 广播节点删除事件
+                Editor.Ipc.sendToAll("scene:node-deleted", { uuid: uuid });
+            }, 10);
+
+            if (event.reply) event.reply(null, `Node ${uuid} deleted`);
+        } else {
+            if (event.reply) event.reply(new Error(`Node not found: ${uuid}`));
         }
     },
 

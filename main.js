@@ -1409,11 +1409,11 @@ export default class NewScript extends cc.Component {
 			// 3. 应用编辑
 			// 必须按倒序应用编辑，否则后续编辑的位置会偏移 (假设edits未排序，这里简单处理，实际上LSP通常建议客户端倒序应用或计算偏移)
 			// 这里假设edits已经按照位置排序或者用户负责，如果需要严谨，应先按 start/position 倒序排序
-			// 简单做个排序保险：
+			// 简单排序保险：
 			const sortedEdits = [...edits].sort((a, b) => {
 				const posA = a.position !== undefined ? a.position : a.start;
 				const posB = b.position !== undefined ? b.position : b.start;
-				return posB - posA; // big to small
+				return posB - posA; // 从大到小
 			});
 
 			sortedEdits.forEach((edit) => {
@@ -1479,9 +1479,24 @@ export default class NewScript extends cc.Component {
 			'File/Save': 'scene:stash-and-save', // 别名
 			'Edit/Undo': 'scene:undo',
 			'Edit/Redo': 'scene:redo',
+			'Edit/Delete': 'scene:delete-selected',
+			'Delete': 'scene:delete-selected',
+			'delete': 'scene:delete-selected',
 			'Node/Create Empty Node': 'scene:create-node-by-classid', // 简化的映射，通常需要参数
 			'Project/Build': 'app:build-project',
 		};
+
+		// 特殊处理 delete-node:UUID 格式
+		if (menuPath.startsWith("delete-node:")) {
+			const uuid = menuPath.split(":")[1];
+			if (uuid) {
+				Editor.Scene.callSceneScript('mcp-bridge', 'delete-node', { uuid }, (err, result) => {
+					if (err) callback(err);
+					else callback(null, result || `Node ${uuid} deleted via scene script`);
+				});
+				return;
+			}
+		}
 
 		if (menuMap[menuPath]) {
 			const ipcMsg = menuMap[menuPath];
@@ -1508,7 +1523,6 @@ export default class NewScript extends cc.Component {
 		}
 	},
 
-	// 验证脚本
 	// 验证脚本
 	validateScript(args, callback) {
 		const { filePath } = args;
@@ -1550,7 +1564,7 @@ export default class NewScript extends cc.Component {
 				// 简单的正则表达式检查：是否有非法字符或明显错误结构 (示例)
 				// 这里暂时只做简单的括号匹配检查或直接通过，但给出一个 Warning
 
-				// 检查是否有 class 定义 (简单的heuristic)
+				// 检查是否有 class 定义 (简单的启发式检查)
 				if (!content.includes('class ') && !content.includes('interface ') && !content.includes('enum ') && !content.includes('export ')) {
 					return callback(null, { valid: true, message: "Warning: TypeScript file seems to lack standard definitions (class/interface), but basic syntax check is skipped due to missing compiler." });
 				}
@@ -1631,7 +1645,7 @@ export default class NewScript extends cc.Component {
 		"inspect-apis"() {
 			addLog("info", "[API Inspector] Starting DEEP inspection...");
 
-			// Helper to get function arguments
+			// 获取函数参数的辅助函数
 			const getArgs = (func) => {
 				try {
 					const str = func.toString();
@@ -1645,7 +1659,7 @@ export default class NewScript extends cc.Component {
 				}
 			};
 
-			// Helper to inspect an object
+			// 检查对象的辅助函数
 			const inspectObj = (name, obj) => {
 				if (!obj) return { name, exists: false };
 				const props = {};
@@ -1655,7 +1669,7 @@ export default class NewScript extends cc.Component {
 				const allKeys = new Set([...Object.getOwnPropertyNames(obj), ...Object.getOwnPropertyNames(proto || {})]);
 
 				allKeys.forEach(key => {
-					if (key.startsWith("_")) return; // Skip private
+					if (key.startsWith("_")) return; // 跳过私有属性
 					try {
 						const val = obj[key];
 						if (typeof val === 'function') {
@@ -1668,7 +1682,7 @@ export default class NewScript extends cc.Component {
 				return { name, exists: true, props };
 			};
 
-			// 1. Inspect Standard Objects
+			// 1. 检查标准对象
 			const standardObjects = {
 				"Editor.assetdb": Editor.assetdb,
 				"Editor.Selection": Editor.Selection,
@@ -1684,7 +1698,7 @@ export default class NewScript extends cc.Component {
 				report[key] = inspectObj(key, standardObjects[key]);
 			});
 
-			// 2. Check Specific Forum APIs
+			// 2. 检查特定论坛提到的 API
 			const forumChecklist = [
 				"Editor.assetdb.queryInfoByUuid",
 				"Editor.assetdb.assetInfoByUuid",
@@ -1705,7 +1719,7 @@ export default class NewScript extends cc.Component {
 			const checklistResults = {};
 			forumChecklist.forEach(path => {
 				const parts = path.split(".");
-				let curr = global; // In main process, Editor is global
+				let curr = global; // 在主进程中，Editor 是全局的
 				let exists = true;
 				for (const part of parts) {
 					if (curr && curr[part]) {
@@ -1721,7 +1735,7 @@ export default class NewScript extends cc.Component {
 			addLog("info", `[API Inspector] Standard Objects:\n${JSON.stringify(report, null, 2)}`);
 			addLog("info", `[API Inspector] Forum Checklist:\n${JSON.stringify(checklistResults, null, 2)}`);
 
-			// 3. Inspect Built-in Package IPCs
+			// 3. 检查内置包 IPC 消息
 			const ipcReport = {};
 			const builtinPackages = ["scene", "builder", "assets"]; // 核心内置包
 			const fs = require("fs");
