@@ -6,7 +6,7 @@
 	"main": "main.js",
 	"scene-script": "scene-script.js",
 	"main-menu": {
-		"Packages/MCP Bridge/Open Test Panel": {
+		"MCP Bridge/Open Panel": {
 			"message": "mcp-bridge:open-test-panel"
 		}
 	},
