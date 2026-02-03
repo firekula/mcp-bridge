@@ -1,5 +1,6 @@
 "use strict";
 const fs = require("fs");
+const { IpcUi } = require("../dist/IpcUi");
 
 Editor.Panel.extend({
 	style: fs.readFileSync(Editor.url("packages://mcp-bridge/panel/index.html"), "utf-8"),
@@ -24,8 +25,10 @@ Editor.Panel.extend({
 			logView: root.querySelector("#logConsole"),
 			tabMain: root.querySelector("#tabMain"),
 			tabTest: root.querySelector("#tabTest"),
+			tabIpc: root.querySelector("#tabIpc"),
 			panelMain: root.querySelector("#panelMain"),
 			panelTest: root.querySelector("#panelTest"),
+			panelIpc: root.querySelector("#panelIpc"),
 			toolName: root.querySelector("#toolName"),
 			toolParams: root.querySelector("#toolParams"),
 			toolDescription: root.querySelector("#toolDescription"),
@@ -49,19 +52,34 @@ Editor.Panel.extend({
 			}
 		});
 
+		// Initialize IPC UI
+		new IpcUi(root);
+
 		// 2. 标签切换
 		els.tabMain.addEventListener("confirm", () => {
 			els.tabMain.classList.add("active");
 			els.tabTest.classList.remove("active");
+			els.tabIpc.classList.remove("active");
 			els.panelMain.classList.add("active");
 			els.panelTest.classList.remove("active");
+			els.panelIpc.classList.remove("active");
 		});
 		els.tabTest.addEventListener("confirm", () => {
 			els.tabTest.classList.add("active");
 			els.tabMain.classList.remove("active");
+			els.tabIpc.classList.remove("active");
 			els.panelTest.classList.add("active");
 			els.panelMain.classList.remove("active");
+			els.panelIpc.classList.remove("active");
 			this.fetchTools(els);
+		});
+		els.tabIpc.addEventListener("confirm", () => {
+			els.tabIpc.classList.add("active");
+			els.tabMain.classList.remove("active");
+			els.tabTest.classList.remove("active");
+			els.panelIpc.classList.add("active");
+			els.panelMain.classList.remove("active");
+			els.panelTest.classList.remove("active");
 		});
 
 		// 3. 基础功能

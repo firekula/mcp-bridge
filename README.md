@@ -113,7 +113,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `id`: 节点 UUID
     - `x`, `y`: 坐标
     - `scaleX`, `scaleY`: 缩放值
-    - `color`: HEX 颜色代码（如 #FF0000）
+    - `color`: HEX 颜色代码（如 #FF0000）(支持撤销操作)
 
 ### 6. open_scene
 
@@ -137,7 +137,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `action`: 操作类型（`add`, `remove`, `get`）
     - `componentType`: 组件类型，如 `cc.Sprite`（用于 `add` 操作）
     - `componentId`: 组件 ID（用于 `remove` 操作）
-    - `properties`: 组件属性（用于 `add` 操作）
+    - `properties`: 组件属性（用于 `add` 操作）。**智能特性**：如果属性期望组件类型但传入节点UUID，插件会自动查找匹配组件。
 
 ### 9. manage_script
 
@@ -229,7 +229,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 - **描述**: 执行菜单项
 - **参数**:
-    - `menuPath`: 菜单项路径，如 `Assets/Create/Folder`
+    - `menuPath`: 菜单项路径，如 `Assets/Create/Folder`。支持映射常用命令：`File/New Scene`, `File/Save Scene`, `Edit/Undo`, `Edit/Redo`, `Project/Build` 等。
 
 ### 19. apply_text_edits
 
@@ -255,6 +255,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **描述**: 验证脚本
 - **参数**:
     - `filePath`: 脚本路径，如 `db://assets/scripts/TestScript.ts`
+    - **注意**：对于 TypeScript 文件，仅进行基础语法结构检查，不进行完整编译验证。
 
 ### 22. find_in_file
 

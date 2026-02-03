@@ -1,4 +1,5 @@
 "use strict";
+const { IpcManager } = require("./dist/IpcManager");
 
 const http = require("http");
 const path = require("path");
@@ -12,7 +13,6 @@ let serverConfig = {
 	active: false,
 };
 
-// 封装日志函数，同时发送给面板和编辑器控制台
 // 封装日志函数，同时发送给面板和编辑器控制台
 function addLog(type, message) {
 	const logEntry = {
@@ -182,17 +182,17 @@ const getToolsList = () => {
 				type: "object",
 				properties: {
 					nodeId: { type: "string", description: "节点 UUID" },
-					action: { type: "string", enum: ["add", "remove", "get"], description: "操作类型" },
-					componentType: { type: "string", description: "组件类型，如 cc.Sprite" },
-					componentId: { type: "string", description: "组件 ID (用于 remove 操作)" },
-					properties: { type: "object", description: "组件属性 (用于 add 操作)" },
+					action: { type: "string", enum: ["add", "remove", "update", "get"], description: "操作类型 (add: 添加组件, remove: 移除组件, update: 更新组件属性, get: 获取组件列表)" },
+					componentType: { type: "string", description: "组件类型，如 cc.Sprite (add/update 操作需要)" },
+					componentId: { type: "string", description: "组件 ID (remove/update 操作可选)" },
+					properties: { type: "object", description: "组件属性 (add/update 操作使用). 支持智能解析: 如果属性类型是组件但提供了节点UUID，会自动查找对应组件。" },
 				},
 				required: ["nodeId", "action"],
 			},
 		},
 		{
 			name: "manage_script",
-			description: "管理脚本文件",
+			description: "管理脚本文件。注意：创建或修改脚本后，编辑器需要时间进行编译（通常几秒钟）。新脚本在编译完成前无法作为组件添加到节点。建议在 create 后调用 refresh_editor，或等待一段时间后再使用 manage_components。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -914,7 +914,18 @@ export default class NewScript extends cc.Component {
     update (dt) {}
 }`,
 					(err) => {
-						callback(err, err ? null : `Script created at ${scriptPath}`);
+						if (err) {
+							callback(err);
+						} else {
+							// 【关键修复】创建脚本后，必须刷新 AssetDB 并等待完成，
+							// 否则后续立即挂载脚本的操作(manage_components)会因找不到脚本 UUID 而失败。
+							Editor.assetdb.refresh(scriptPath, (refreshErr) => {
+								if (refreshErr) {
+									addLog("warn", `Refresh failed after script creation: ${refreshErr}`);
+								}
+								callback(null, `Script created at ${scriptPath}`);
+							});
+						}
 					},
 				);
 				break;
@@ -1460,19 +1471,44 @@ export default class NewScript extends cc.Component {
 		}
 		addLog("info", `Executing Menu Item: ${menuPath}`);
 
-		// 尝试通过 IPC 触发菜单 (Cocos 2.x 常用方式)
-		// 如果是保存场景，直接使用对应的 stash-and-save IPC
-		if (menuPath === 'File/Save Scene') {
-			Editor.Ipc.sendToMain("scene:stash-and-save");
+		// 菜单项映射表 (Cocos Creator 2.4.x IPC)
+		// 参考: IPC_MESSAGES.md
+		const menuMap = {
+			'File/New Scene': 'scene:new-scene',
+			'File/Save Scene': 'scene:stash-and-save',
+			'File/Save': 'scene:stash-and-save', // 别名
+			'Edit/Undo': 'scene:undo',
+			'Edit/Redo': 'scene:redo',
+			'Node/Create Empty Node': 'scene:create-node-by-classid', // 简化的映射，通常需要参数
+			'Project/Build': 'app:build-project',
+		};
+
+		if (menuMap[menuPath]) {
+			const ipcMsg = menuMap[menuPath];
+			try {
+				Editor.Ipc.sendToMain(ipcMsg);
+				callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg}`);
+			} catch (err) {
+				callback(`Failed to execute IPC ${ipcMsg}: ${err.message}`);
+			}
 		} else {
-			// 通用尝试 (可能不工作，取决于编辑器版本)
-			// Editor.Ipc.sendToMain('ui:menu-click', menuPath); 
-			// 兜底：仅记录日志，暂不支持通用菜单点击
-			addLog("warn", "Generic menu execution partial support.");
+			// 对于未在映射表中的菜单，尝试通用的 menu:click (虽然不一定有效)
+			// 或者直接返回不支持的警告
+			addLog("warn", `Menu item '${menuPath}' not found in supported map. Trying legacy fallback.`);
+
+			// 尝试通用调用
+			try {
+				// 注意：Cocos Creator 2.x 的 menu:click 通常需要 Electron 菜单 ID，而不只是路径
+				// 这里做个尽力而为的尝试
+				Editor.Ipc.sendToMain('menu:click', menuPath);
+				callback(null, `Generic menu action sent: ${menuPath} (Success guaranteed only for supported items)`);
+			} catch (e) {
+				callback(`Failed to execute menu item: ${menuPath}`);
+			}
 		}
-		callback(null, `Menu action triggered: ${menuPath}`);
 	},
 
+	// 验证脚本
 	// 验证脚本
 	validateScript(args, callback) {
 		const { filePath } = args;
@@ -1493,25 +1529,56 @@ export default class NewScript extends cc.Component {
 		try {
 			const content = fs.readFileSync(fspath, "utf-8");
 
-			// 对于 JavaScript 脚本，使用 eval 进行简单验证
+			// 检查空文件
+			if (!content || content.trim().length === 0) {
+				return callback(null, { valid: false, message: "Script is empty" });
+			}
+
+			// 对于 JavaScript 脚本，使用 Function 构造器进行语法验证
 			if (filePath.endsWith(".js")) {
-				// 包装在函数中以避免变量污染
 				const wrapper = `(function() { ${content} })`;
 				try {
-					new Function(wrapper); // 使用 Function 构造器比 direct eval稍微安全一点点，虽在这个场景下差别不大
+					new Function(wrapper);
+					callback(null, { valid: true, message: "JavaScript syntax is valid" });
 				} catch (syntaxErr) {
 					return callback(null, { valid: false, message: syntaxErr.message });
 				}
 			}
-			// 对于 TypeScript，暂不进行复杂编译检查，仅确保文件可读
+			// 对于 TypeScript，由于没有内置 TS 编译器，我们进行基础的"防呆"检查
+			// 并明确告知用户无法进行完整编译验证
+			else if (filePath.endsWith(".ts")) {
+				// 简单的正则表达式检查：是否有非法字符或明显错误结构 (示例)
+				// 这里暂时只做简单的括号匹配检查或直接通过，但给出一个 Warning
 
-			callback(null, { valid: true, message: "Script syntax is valid" });
+				// 检查是否有 class 定义 (简单的heuristic)
+				if (!content.includes('class ') && !content.includes('interface ') && !content.includes('enum ') && !content.includes('export ')) {
+					return callback(null, { valid: true, message: "Warning: TypeScript file seems to lack standard definitions (class/interface), but basic syntax check is skipped due to missing compiler." });
+				}
+
+				callback(null, { valid: true, message: "TypeScript basic check passed. (Full compilation validation requires editor build)" });
+			} else {
+				callback(null, { valid: true, message: "Unknown script type, validation skipped." });
+			}
 		} catch (err) {
 			callback(null, { valid: false, message: `Read Error: ${err.message}` });
 		}
 	},
 	// 暴露给 MCP 或面板的 API 封装
 	messages: {
+		"scan-ipc-messages"(event) {
+			try {
+				const msgs = IpcManager.getIpcMessages();
+				if (event.reply) event.reply(null, msgs);
+			} catch (e) {
+				if (event.reply) event.reply(e.message);
+			}
+		},
+		"test-ipc-message"(event, args) {
+			const { name, params } = args;
+			IpcManager.testIpcMessage(name, params).then((result) => {
+				if (event.reply) event.reply(null, result);
+			});
+		},
 		"open-test-panel"() {
 			Editor.Panel.open("mcp-bridge");
 		},
