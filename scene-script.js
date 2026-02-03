@@ -750,4 +750,82 @@ module.exports = {
             if (event.reply) event.reply(new Error(`Unknown VFX action: ${action}`));
         }
     },
+
+    "manage-animation": function (event, args) {
+        const { action, nodeId, clipName } = args;
+        const node = cc.engine.getInstanceById(nodeId);
+
+        if (!node) {
+            if (event.reply) event.reply(new Error(`Node not found: ${nodeId}`));
+            return;
+        }
+
+        const anim = node.getComponent(cc.Animation);
+        if (!anim) {
+            if (event.reply) event.reply(new Error(`Animation component not found on node: ${nodeId}`));
+            return;
+        }
+
+        switch (action) {
+            case "get_list":
+                const clips = anim.getClips();
+                const clipList = clips.map(c => ({
+                    name: c.name,
+                    duration: c.duration,
+                    sample: c.sample,
+                    speed: c.speed,
+                    wrapMode: c.wrapMode
+                }));
+                if (event.reply) event.reply(null, clipList);
+                break;
+
+            case "get_info":
+                const currentClip = anim.currentClip;
+                let isPlaying = false;
+                // [安全修复] 只有在有当前 Clip 时才获取状态，避免 Animation 组件无 Clip 时的崩溃
+                if (currentClip) {
+                    const state = anim.getAnimationState(currentClip.name);
+                    if (state) {
+                        isPlaying = state.isPlaying;
+                    }
+                }
+                const info = {
+                    currentClip: currentClip ? currentClip.name : null,
+                    clips: anim.getClips().map(c => c.name),
+                    playOnLoad: anim.playOnLoad,
+                    isPlaying: isPlaying
+                };
+                if (event.reply) event.reply(null, info);
+                break;
+
+            case "play":
+                if (!clipName) {
+                    anim.play();
+                    if (event.reply) event.reply(null, "Playing default clip");
+                } else {
+                    anim.play(clipName);
+                    if (event.reply) event.reply(null, `Playing clip: ${clipName}`);
+                }
+                break;
+
+            case "stop":
+                anim.stop();
+                if (event.reply) event.reply(null, "Animation stopped");
+                break;
+
+            case "pause":
+                anim.pause();
+                if (event.reply) event.reply(null, "Animation paused");
+                break;
+
+            case "resume":
+                anim.resume();
+                if (event.reply) event.reply(null, "Animation resumed");
+                break;
+
+            default:
+                if (event.reply) event.reply(new Error(`Unknown animation action: ${action}`));
+                break;
+        }
+    },
 };

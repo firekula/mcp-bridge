@@ -4,6 +4,7 @@ const { IpcManager } = require("./dist/IpcManager");
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 
 let logBuffer = []; // 存储所有日志
 let mcpServer = null;
@@ -449,6 +450,34 @@ const getToolsList = () => {
 				},
 				required: ["action"]
 			}
+		},
+		{
+			name: "get_sha",
+			description: "获取指定文件的 SHA-256 哈希值",
+			inputSchema: {
+				type: "object",
+				properties: {
+					path: { type: "string", description: "文件路径，如 db://assets/scripts/Test.ts" }
+				},
+				required: ["path"]
+			}
+		},
+		{
+			name: "manage_animation",
+			description: "管理节点的动画组件",
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: {
+						type: "string",
+						enum: ["get_list", "get_info", "play", "stop", "pause", "resume"],
+						description: "操作类型"
+					},
+					nodeId: { type: "string", description: "节点 UUID" },
+					clipName: { type: "string", description: "动画剪辑名称 (用于 play)" }
+				},
+				required: ["action", "nodeId"]
+			}
 		}
 	];
 };
@@ -707,17 +736,10 @@ module.exports = {
 			case "save_scene":
 				isSceneBusy = true;
 				addLog("info", "Preparing to save scene... Waiting for UI sync.");
-				// 强制延迟保存，防止死锁
-				setTimeout(() => {
-					// 使用 stash-and-save 替代 save-scene，这更接近 Ctrl+S 的行为
-					Editor.Ipc.sendToMain("scene:stash-and-save");
-					addLog("info", "Executing Safe Save (Stash)...");
-					setTimeout(() => {
-						isSceneBusy = false;
-						addLog("info", "Safe Save completed.");
-						callback(null, "Scene saved successfully.");
-					}, 1000);
-				}, 500);
+				Editor.Ipc.sendToPanel("scene", "scene:stash-and-save");
+				isSceneBusy = false;
+				addLog("info", "Safe Save completed.");
+				callback(null, "Scene saved successfully.");
 				break;
 
 			case "get_scene_hierarchy":
@@ -797,6 +819,12 @@ module.exports = {
 
 			case "manage_editor":
 				this.manageEditor(args, callback);
+				break;
+			case "get_sha":
+				this.getSha(args, callback);
+				break;
+			case "manage_animation":
+				this.manageAnimation(args, callback);
 				break;
 
 			case "find_gameobjects":
@@ -1864,5 +1892,31 @@ export default class NewScript extends cc.Component {
 		} catch (err) {
 			callback(`Undo operation failed: ${err.message}`);
 		}
+	},
+
+	// 获取文件 SHA-256
+	getSha(args, callback) {
+		const { path: url } = args;
+		const fspath = Editor.assetdb.urlToFspath(url);
+
+		if (!fspath || !fs.existsSync(fspath)) {
+			return callback(`File not found: ${url}`);
+		}
+
+		try {
+			const fileBuffer = fs.readFileSync(fspath);
+			const hashSum = crypto.createHash('sha256');
+			hashSum.update(fileBuffer);
+			const sha = hashSum.digest('hex');
+			callback(null, { path: url, sha: sha });
+		} catch (err) {
+			callback(`Failed to calculate SHA: ${err.message}`);
+		}
+	},
+
+	// 管理动画
+	manageAnimation(args, callback) {
+		// 转发给场景脚本处理
+		Editor.Scene.callSceneScript("mcp-bridge", "manage-animation", args, callback);
 	},
 };

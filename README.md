@@ -39,7 +39,7 @@
 ### 启动
 
 1. 打开 Cocos Creator 编辑器
-2. 在菜单栏选择 `Packages/MCP Bridge/Open Test Panel` 打开测试面板
+2. 在菜单栏选择 `MCP Bridge/Open Panel` 打开测试面板
 3. 在面板中点击 "Start" 按钮启动服务
 4. 服务默认运行在端口 3456 上
 
@@ -283,6 +283,21 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `properties`: 粒子属性对象
         - `duration`, `emissionRate`, `life`, `lifeVar`, `startColor`, `endColor`
         - `startSize`, `endSize`, `speed`, `angle`, `gravity`, `file` (plist/texture)
+
+### 25. manage_animation
+
+- **描述**: 管理节点的动画组件
+- **参数**:
+    - `action`: 操作类型 (`get_list`, `get_info`, `play`, `stop`, `pause`, `resume`)
+    - `nodeId`: 节点 UUID
+    - `clipName`: 动画剪辑名称 (用于 `play` 操作，可选，默认播放 defaultClip)
+
+### 26. get_sha
+
+- **描述**: 获取指定文件的 SHA-256 哈希值
+- **参数**:
+    - `path`: 文件路径，如 `db://assets/scripts/Test.ts`
+
 
 ## 技术实现
 
