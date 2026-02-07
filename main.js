@@ -121,7 +121,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_scene",
-			description: "在 assets 目录下创建一个新的场景文件",
+			description: "在 assets 目录下创建一个新的场景文件。创建并通过 open_scene 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -144,7 +144,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "open_scene",
-			description: "打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒再进行节点创建或保存操作。",
+			description: "打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒。重要：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -178,7 +178,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_components",
-			description: "管理节点组件",
+			description: "管理节点组件。重要提示：在执行 'add' 操作前，请务必先通过 'get' 操作检查节点上是否已存在同类型的组件，以避免重复添加导致逻辑异常。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -713,7 +713,7 @@ module.exports = {
 
 	handleMcpCall(name, args, callback) {
 		if (isSceneBusy && (name === "save_scene" || name === "create_node")) {
-			return callback("Editor is busy (Processing Scene), please wait a moment.");
+			return callback("编辑器正忙（正在处理场景），请稍候。");
 		}
 		switch (name) {
 			case "get_selected_node":
@@ -730,16 +730,16 @@ module.exports = {
 					value: args.newName,
 					isSubProp: false
 				});
-				callback(null, `Node name updated to ${args.newName}`);
+				callback(null, `节点名称已更新为 ${args.newName}`);
 				break;
 
 			case "save_scene":
 				isSceneBusy = true;
-				addLog("info", "Preparing to save scene... Waiting for UI sync.");
+				addLog("info", "准备保存场景... 等待 UI 同步。");
 				Editor.Ipc.sendToPanel("scene", "scene:stash-and-save");
 				isSceneBusy = false;
-				addLog("info", "Safe Save completed.");
-				callback(null, "Scene saved successfully.");
+				addLog("info", "安全保存已完成。");
+				callback(null, "场景保存成功。");
 				break;
 
 			case "get_scene_hierarchy":
@@ -753,7 +753,7 @@ module.exports = {
 						addLog("error", `Transform update failed: ${err}`);
 						callback(err);
 					} else {
-						callback(null, "Transform updated");
+						callback(null, "变换信息已更新");
 					}
 				});
 				break;
@@ -761,17 +761,17 @@ module.exports = {
 			case "create_scene":
 				const sceneUrl = `db://assets/${args.sceneName}.fire`;
 				if (Editor.assetdb.exists(sceneUrl)) {
-					return callback("Scene already exists");
+					return callback("场景已存在");
 				}
 				Editor.assetdb.create(sceneUrl, getNewSceneTemplate(), (err) => {
-					callback(err, err ? null : `Standard Scene created at ${sceneUrl}`);
+					callback(err, err ? null : `标准场景已创建于 ${sceneUrl}`);
 				});
 				break;
 
 			case "create_prefab":
 				const prefabUrl = `db://assets/${args.prefabName}.prefab`;
 				Editor.Ipc.sendToMain("scene:create-prefab", args.nodeId, prefabUrl);
-				callback(null, `Command sent: Creating prefab '${args.prefabName}'`);
+				callback(null, `命令已发送：正在创建预制体 '${args.prefabName}'`);
 				break;
 
 			case "open_scene":
@@ -781,11 +781,11 @@ module.exports = {
 					Editor.Ipc.sendToMain("scene:open-by-uuid", openUuid);
 					setTimeout(() => {
 						isSceneBusy = false;
-						callback(null, `Success: Opening scene ${args.url}`);
+						callback(null, `成功：正在打开场景 ${args.url}`);
 					}, 2000);
 				} else {
 					isSceneBusy = false;
-					callback(`Could not find asset with URL ${args.url}`);
+					callback(`找不到路径为 ${args.url} 的资源`);
 				}
 				break;
 

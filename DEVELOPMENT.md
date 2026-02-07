@@ -449,9 +449,9 @@ manageAsset(args, callback) {
 
 | 任务 | 状态 | 描述 |
 |------|------|------|
-| 全局文件搜索 | ✅ 完成 | 实现 find_in_file 工具 |
-| 撤销/重做支持 | ✅ 完成 | 实现 manage_undo 工具，并重构核心操作支持撤销 |
 | 特效管理 | ✅ 完成 | 实现 manage_vfx 工具，支持粒子系统管理 |
+| 文件哈希 | ✅ 完成 | 实现 get_sha 工具，支持文件 SHA-256 计算 |
+| 动画管理 | ✅ 完成 | 实现 manage_animation 工具，支持动画播放与控制 |
 
 ### 11.4 第六阶段：可靠性与体验优化（已完成）
 
@@ -490,7 +490,8 @@ manageAsset(args, callback) {
 | 脚本验证 | validate_script | ✅ 已实现 | |
 | 撤销/重做 | undo/redo | ✅ 已实现 | |
 | VFX 管理 | manage_vfx | ✅ 已实现 | |
-| Git 集成 | get_sha | ❌ 未实现 | 低优先级 |
+| Git 集成 | get_sha | ✅ 已实现 | 虽然优先级中等，但已根据需求完成 |
+| 动画管理 | manage_animation | ✅ 已实现 | 支持播放、暂停、停止及信息获取 |
 | ScriptableObject | manage_so | ❌ 未实现 | 使用 AssetDB 替代 |
 
 ## 13. 风险评估

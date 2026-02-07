@@ -26,11 +26,11 @@ module.exports = {
             });
 
             if (event.reply) {
-                event.reply(null, `Node ${id} updated to ${value}`);
+                event.reply(null, `节点 ${id} 已更新为 ${value}`);
             }
         } else {
             if (event.reply) {
-                event.reply(new Error("Scene Script: Node not found " + id));
+                event.reply(new Error("场景脚本：找不到节点 " + id));
             }
         }
     },
@@ -102,10 +102,9 @@ module.exports = {
             Editor.Ipc.sendToAll("scene:node-changed", { uuid: id });
 
             Editor.log(`[scene-script] Update complete. New Pos: (${node.x}, ${node.y})`);
-            if (event.reply) event.reply(null, "Transform updated");
+            if (event.reply) event.reply(null, "变换信息已更新");
         } else {
-            Editor.error(`[scene-script] Node not found: ${id}`);
-            if (event.reply) event.reply(new Error("Node not found"));
+            if (event.reply) event.reply(new Error("找不到节点"));
         }
     },
     "create-node": function (event, args) {
@@ -172,6 +171,50 @@ module.exports = {
             const compClass = component.constructor;
 
             for (const [key, value] of Object.entries(props)) {
+                // 【核心修复】专门处理各类事件属性 (ClickEvents, ScrollEvents 等)
+                const isEventProp = Array.isArray(value) && (key.toLowerCase().endsWith('events') || key === 'clickEvents');
+
+                if (isEventProp) {
+                    const eventHandlers = [];
+                    for (const item of value) {
+                        if (typeof item === 'object' && (item.target || item.component || item.handler)) {
+                            const handler = new cc.Component.EventHandler();
+
+                            // 解析 Target Node
+                            if (item.target) {
+                                let targetNode = null;
+                                if (typeof item.target === 'string') {
+                                    targetNode = cc.engine.getInstanceById(item.target);
+                                    if (!targetNode && Editor.Utils && Editor.Utils.UuidUtils) {
+                                        try {
+                                            const decompressed = Editor.Utils.UuidUtils.decompressUuid(item.target);
+                                            targetNode = cc.engine.getInstanceById(decompressed);
+                                        } catch (e) { }
+                                    }
+                                } else if (item.target instanceof cc.Node) {
+                                    targetNode = item.target;
+                                }
+
+                                if (targetNode) {
+                                    handler.target = targetNode;
+                                    Editor.log(`[scene-script] Resolved event target: ${targetNode.name}`);
+                                }
+                            }
+
+                            if (item.component) handler.component = item.component;
+                            if (item.handler) handler.handler = item.handler;
+                            if (item.customEventData !== undefined) handler.customEventData = String(item.customEventData);
+
+                            eventHandlers.push(handler);
+                        } else {
+                            // 如果不是对象，原样保留
+                            eventHandlers.push(item);
+                        }
+                    }
+                    component[key] = eventHandlers;
+                    continue; // 处理完事件数组，跳出本次循环
+                }
+
                 // 检查属性是否存在
                 if (component[key] !== undefined) {
                     let finalValue = value;
@@ -207,7 +250,6 @@ module.exports = {
                             // 尝试获取属性定义类型
                             let typeName = null;
 
-
                             // 优先尝试 getClassAttrs (Cocos 2.x editor environment)
                             if (cc.Class.Attr.getClassAttrs) {
                                 const attrs = cc.Class.Attr.getClassAttrs(compClass);
@@ -230,7 +272,6 @@ module.exports = {
                             }
 
                             if (typeName && (typeName.prototype instanceof cc.Component || typeName === cc.Component)) {
-
                                 // 这是一个组件属性
                                 const targetComp = targetNode.getComponent(typeName);
                                 if (targetComp) {
@@ -260,16 +301,15 @@ module.exports = {
             }
         };
 
-
         if (!node) {
-            if (event.reply) event.reply(new Error("Node not found"));
+            if (event.reply) event.reply(new Error("找不到节点"));
             return;
         }
 
         switch (action) {
             case "add":
                 if (!componentType) {
-                    if (event.reply) event.reply(new Error("Component type is required"));
+                    if (event.reply) event.reply(new Error("必须提供组件类型"));
                     return;
                 }
 
@@ -285,7 +325,7 @@ module.exports = {
                     }
 
                     if (!compClass) {
-                        if (event.reply) event.reply(new Error(`Component type not found: ${componentType}`));
+                        if (event.reply) event.reply(new Error(`找不到组件类型: ${componentType}`));
                         return;
                     }
 
@@ -300,15 +340,15 @@ module.exports = {
                     Editor.Ipc.sendToMain("scene:dirty");
                     Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
 
-                    if (event.reply) event.reply(null, `Component ${componentType} added`);
+                    if (event.reply) event.reply(null, `组件 ${componentType} 已添加`);
                 } catch (err) {
-                    if (event.reply) event.reply(new Error(`Failed to add component: ${err.message}`));
+                    if (event.reply) event.reply(new Error(`添加组件失败: ${err.message}`));
                 }
                 break;
 
             case "remove":
                 if (!componentId) {
-                    if (event.reply) event.reply(new Error("Component ID is required"));
+                    if (event.reply) event.reply(new Error("必须提供组件 ID"));
                     return;
                 }
 
@@ -328,12 +368,12 @@ module.exports = {
                         node.removeComponent(component);
                         Editor.Ipc.sendToMain("scene:dirty");
                         Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
-                        if (event.reply) event.reply(null, "Component removed");
+                        if (event.reply) event.reply(null, "组件已移除");
                     } else {
-                        if (event.reply) event.reply(new Error("Component not found"));
+                        if (event.reply) event.reply(new Error("找不到组件"));
                     }
                 } catch (err) {
-                    if (event.reply) event.reply(new Error(`Failed to remove component: ${err.message}`));
+                    if (event.reply) event.reply(new Error(`移除组件失败: ${err.message}`));
                 }
                 break;
 
@@ -387,7 +427,7 @@ module.exports = {
                         if (event.reply) event.reply(new Error(`Component not found (Type: ${componentType}, ID: ${componentId})`));
                     }
                 } catch (err) {
-                    if (event.reply) event.reply(new Error(`Failed to update component: ${err.message}`));
+                    if (event.reply) event.reply(new Error(`更新组件失败: ${err.message}`));
                 }
                 break;
 
@@ -446,12 +486,12 @@ module.exports = {
                     });
                     if (event.reply) event.reply(null, components);
                 } catch (err) {
-                    if (event.reply) event.reply(new Error(`Failed to get components: ${err.message}`));
+                    if (event.reply) event.reply(new Error(`获取组件失败: ${err.message}`));
                 }
                 break;
 
             default:
-                if (event.reply) event.reply(new Error(`Unknown component action: ${action}`));
+                if (event.reply) event.reply(new Error(`未知的组件操作类型: ${action}`));
                 break;
         }
     },
@@ -483,7 +523,7 @@ module.exports = {
         }
 
         if (!prefabUuid) {
-            if (event.reply) event.reply(new Error("Prefab UUID is required."));
+            if (event.reply) event.reply(new Error("必须提供预制体 UUID。"));
             return;
         }
 
@@ -491,14 +531,14 @@ module.exports = {
         // 如果是旧版，可能需要 cc.loader.load({uuid: ...})，但在 2.4 环境下 assetManager 更推荐
         cc.assetManager.loadAny(prefabUuid, (err, prefab) => {
             if (err) {
-                if (event.reply) event.reply(new Error(`Failed to load prefab: ${err.message}`));
+                if (event.reply) event.reply(new Error(`加载预制体失败: ${err.message}`));
                 return;
             }
 
             // 实例化预制体
             const instance = cc.instantiate(prefab);
             if (!instance) {
-                if (event.reply) event.reply(new Error("Failed to instantiate prefab"));
+                if (event.reply) event.reply(new Error("实例化预制体失败"));
                 return;
             }
 
@@ -518,9 +558,9 @@ module.exports = {
                     });
                 }, 10);
 
-                if (event.reply) event.reply(null, `Prefab instantiated successfully with UUID: ${instance.uuid}`);
+                if (event.reply) event.reply(null, `预制体实例化成功，UUID: ${instance.uuid}`);
             } else {
-                if (event.reply) event.reply(new Error("Parent node not found"));
+                if (event.reply) event.reply(new Error("找不到父节点"));
             }
         });
     },
@@ -610,9 +650,9 @@ module.exports = {
                 Editor.Ipc.sendToAll("scene:node-deleted", { uuid: uuid });
             }, 10);
 
-            if (event.reply) event.reply(null, `Node ${uuid} deleted`);
+            if (event.reply) event.reply(null, `节点 ${uuid} 已删除`);
         } else {
-            if (event.reply) event.reply(new Error(`Node not found: ${uuid}`));
+            if (event.reply) event.reply(new Error(`找不到节点: ${uuid}`));
         }
     },
 
@@ -715,9 +755,9 @@ module.exports = {
 
                 Editor.Ipc.sendToMain("scene:dirty");
                 Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
-                if (event.reply) event.reply(null, "VFX updated");
+                if (event.reply) event.reply(null, "特效已更新");
             } else {
-                if (event.reply) event.reply(new Error("Node not found"));
+                if (event.reply) event.reply(new Error("找不到节点"));
             }
 
         } else if (action === "get_info") {
@@ -747,7 +787,7 @@ module.exports = {
                 if (event.reply) event.reply(new Error("Node not found"));
             }
         } else {
-            if (event.reply) event.reply(new Error(`Unknown VFX action: ${action}`));
+            if (event.reply) event.reply(new Error(`未知的特效操作类型: ${action}`));
         }
     },
 

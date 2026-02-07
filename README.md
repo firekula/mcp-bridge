@@ -117,13 +117,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 6. open_scene
 
-- **描述**: 在编辑器中打开指定的场景文件
+- **描述**: 在编辑器中打开指定的场景文件。这是一个异步且耗时的操作，打开后请等待几秒。**重要提示**：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。
 - **参数**:
     - `url`: 场景资源路径，如 `db://assets/NewScene.fire`
 
 ### 7. create_node
 
-- **描述**: 在当前场景中创建一个新节点
+- **描述**: 在当前场景中创建一个新节点。对于 Canvas/Label 类型，会自动添加对应组件。
 - **参数**:
     - `name`: 节点名称
     - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
@@ -131,13 +131,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 8. manage_components
 
-- **描述**: 管理节点组件
+- **描述**: 管理节点组件。**重要最佳实践**：在执行 `add` 操作前，建议先通过 `get` 操作检查节点上是否已存在同类型的组件，以避免重复添加。
 - **参数**:
     - `nodeId`: 节点 UUID
-    - `action`: 操作类型（`add`, `remove`, `get`）
-    - `componentType`: 组件类型，如 `cc.Sprite`（用于 `add` 操作）
-    - `componentId`: 组件 ID（用于 `remove` 操作）
-    - `properties`: 组件属性（用于 `add` 操作）。**智能特性**：如果属性期望组件类型但传入节点UUID，插件会自动查找匹配组件。
+    - `action`: 操作类型（`add`, `remove`, `get`, `update`）
+    - `componentType`: 组件类型，如 `cc.Sprite`（用于 `add`/`update` 操作）
+    - `componentId`: 组件 ID（用于 `remove`/`update` 操作）
+    - `properties`: 组件属性（用于 `add`/`update` 操作）。**智能特性**：如果属性期望组件类型但传入节点 UUID，插件会自动查找匹配组件。
 
 ### 9. manage_script
 
@@ -168,7 +168,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 12. scene_management
 
-- **描述**: 场景管理
+- **描述**: 场景管理。创建并通过 `open_scene` 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。
 - **参数**:
     - `action`: 操作类型（`create`, `delete`, `duplicate`, `get_info`）
     - `path`: 场景路径，如 `db://assets/scenes/NewScene.fire`
