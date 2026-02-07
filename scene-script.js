@@ -1,11 +1,38 @@
 "use strict";
 
+/**
+ * 更加健壮的节点查找函数，支持解压后的 UUID
+ * @param {string} id 节点的 UUID (支持 22 位压缩格式)
+ * @returns {cc.Node | null} 找到的节点对象或 null
+ */
+const findNode = (id) => {
+    if (!id) return null;
+    let node = cc.engine.getInstanceById(id);
+    if (!node && typeof Editor !== 'undefined' && Editor.Utils && Editor.Utils.UuidUtils) {
+        // 如果直接查不到，尝试对可能是压缩格式的 ID 进行解压后再次查找
+        try {
+            const decompressed = Editor.Utils.UuidUtils.decompressUuid(id);
+            if (decompressed !== id) {
+                node = cc.engine.getInstanceById(decompressed);
+            }
+        } catch (e) {
+            // 忽略转换错误
+        }
+    }
+    return node;
+};
+
 module.exports = {
+    /**
+     * 修改节点的基础属性
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (id, path, value)
+     */
     "set-property": function (event, args) {
         const { id, path, value } = args;
 
         // 1. 获取节点
-        let node = cc.engine.getInstanceById(id);
+        let node = findNode(id);
 
         if (node) {
             // 2. 修改属性
@@ -34,6 +61,10 @@ module.exports = {
             }
         }
     },
+    /**
+     * 获取当前场景的完整层级树
+     * @param {Object} event IPC 事件对象
+     */
     "get-hierarchy": function (event) {
         const scene = cc.director.getScene();
 
@@ -66,11 +97,16 @@ module.exports = {
         if (event.reply) event.reply(null, hierarchy);
     },
 
+    /**
+     * 批量更新节点的变换信息 (坐标、缩放、颜色)
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (id, x, y, scaleX, scaleY, color)
+     */
     "update-node-transform": function (event, args) {
         const { id, x, y, scaleX, scaleY, color } = args;
         Editor.log(`[scene-script] update-node-transform called for ${id} with args: ${JSON.stringify(args)}`);
 
-        let node = cc.engine.getInstanceById(id);
+        let node = findNode(id);
 
         if (node) {
             Editor.log(`[scene-script] Node found: ${node.name}, Current Pos: (${node.x}, ${node.y})`);
@@ -107,6 +143,11 @@ module.exports = {
             if (event.reply) event.reply(new Error("找不到节点"));
         }
     },
+    /**
+     * 在场景中创建新节点
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (name, parentId, type)
+     */
     "create-node": function (event, args) {
         const { name, parentId, type } = args;
         const scene = cc.director.getScene();
@@ -130,18 +171,57 @@ module.exports = {
             camNode.addComponent(cc.Camera);
             camNode.parent = newNode;
         } else if (type === "sprite") {
-            newNode = new cc.Node(name || "New Sprite");
-            newNode.addComponent(cc.Sprite);
+            newNode = new cc.Node(name || "新建精灵节点");
+            let sprite = newNode.addComponent(cc.Sprite);
+            // 设置为 CUSTOM 模式
+            sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+            // 为精灵设置默认尺寸
+            newNode.width = 100;
+            newNode.height = 100;
+
+            // 加载引擎默认图做占位
+            if (args.defaultSpriteUuid) {
+                cc.assetManager.loadAny(args.defaultSpriteUuid, (err, asset) => {
+                    if (!err && (asset instanceof cc.SpriteFrame || asset instanceof cc.Texture2D)) {
+                        sprite.spriteFrame = asset instanceof cc.SpriteFrame ? asset : new cc.SpriteFrame(asset);
+                        Editor.Ipc.sendToMain("scene:dirty");
+                    }
+                });
+            }
+        } else if (type === "button") {
+            newNode = new cc.Node(name || "新建按钮节点");
+            let sprite = newNode.addComponent(cc.Sprite);
+            newNode.addComponent(cc.Button);
+
+            // 设置为 CUSTOM 模式并应用按钮专用尺寸
+            sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+            newNode.width = 150;
+            newNode.height = 50;
+
+            // 设置稍暗的背景颜色 (#A0A0A0)，以便于看清其上的文字
+            newNode.color = new cc.Color(160, 160, 160);
+
+            // 加载引擎默认图
+            if (args.defaultSpriteUuid) {
+                cc.assetManager.loadAny(args.defaultSpriteUuid, (err, asset) => {
+                    if (!err && (asset instanceof cc.SpriteFrame || asset instanceof cc.Texture2D)) {
+                        sprite.spriteFrame = asset instanceof cc.SpriteFrame ? asset : new cc.SpriteFrame(asset);
+                        Editor.Ipc.sendToMain("scene:dirty");
+                    }
+                });
+            }
         } else if (type === "label") {
-            newNode = new cc.Node(name || "New Label");
+            newNode = new cc.Node(name || "新建文本节点");
             let l = newNode.addComponent(cc.Label);
-            l.string = "New Label";
+            l.string = "新文本";
+            newNode.width = 120;
+            newNode.height = 40;
         } else {
             newNode = new cc.Node(name || "New Node");
         }
 
         // 设置层级
-        let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
+        let parent = parentId ? findNode(parentId) : scene;
         if (parent) {
             newNode.parent = parent;
 
@@ -157,12 +237,19 @@ module.exports = {
             }, 10);
 
             if (event.reply) event.reply(null, newNode.uuid);
+        } else {
+            if (event.reply) event.reply(new Error(`无法创建节点：找不到父节点 ${parentId}`));
         }
     },
 
+    /**
+     * 管理节点上的组件 (添加、移除、更新属性)
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (nodeId, action, componentType, componentId, properties)
+     */
     "manage-components": function (event, args) {
         const { nodeId, action, componentType, componentId, properties } = args;
-        let node = cc.engine.getInstanceById(nodeId);
+        let node = findNode(nodeId);
 
         // 辅助函数：应用属性并智能解析
         const applyProperties = (component, props) => {
@@ -182,16 +269,8 @@ module.exports = {
 
                             // 解析 Target Node
                             if (item.target) {
-                                let targetNode = null;
-                                if (typeof item.target === 'string') {
-                                    targetNode = cc.engine.getInstanceById(item.target);
-                                    if (!targetNode && Editor.Utils && Editor.Utils.UuidUtils) {
-                                        try {
-                                            const decompressed = Editor.Utils.UuidUtils.decompressUuid(item.target);
-                                            targetNode = cc.engine.getInstanceById(decompressed);
-                                        } catch (e) { }
-                                    }
-                                } else if (item.target instanceof cc.Node) {
+                                let targetNode = findNode(item.target);
+                                if (!targetNode && item.target instanceof cc.Node) {
                                     targetNode = item.target;
                                 }
 
@@ -225,17 +304,7 @@ module.exports = {
                         // 检查传入值是否是字符串 (可能是 UUID) 或 Node 对象
                         let targetNode = null;
                         if (typeof value === 'string') {
-                            targetNode = cc.engine.getInstanceById(value);
-
-                            // 针对压缩 UUID 的回退处理
-                            if (!targetNode && Editor.Utils && Editor.Utils.UuidUtils) {
-                                try {
-                                    const decompressed = Editor.Utils.UuidUtils.decompressUuid(value);
-                                    if (decompressed !== value) {
-                                        targetNode = cc.engine.getInstanceById(decompressed);
-                                    }
-                                } catch (e) { }
-                            }
+                            targetNode = findNode(value);
 
                             if (targetNode) {
                                 Editor.log(`[scene-script] Resolved node: ${value} -> ${targetNode.name}`);
@@ -565,6 +634,11 @@ module.exports = {
         });
     },
 
+    /**
+     * 根据特定条件在场景中搜索节点
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (conditions, recursive)
+     */
     "find-gameobjects": function (event, args) {
         const { conditions, recursive = true } = args;
         const result = [];
@@ -634,9 +708,14 @@ module.exports = {
         }
     },
 
+    /**
+     * 删除指定的场景节点
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (uuid)
+     */
     "delete-node": function (event, args) {
         const { uuid } = args;
-        const node = cc.engine.getInstanceById(uuid);
+        const node = findNode(uuid);
         if (node) {
             const parent = node.parent;
             node.destroy();
@@ -656,6 +735,11 @@ module.exports = {
         }
     },
 
+    /**
+     * 管理高效的全场景特效 (粒子系统)
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (action, nodeId, properties, name, parentId)
+     */
     "manage-vfx": function (event, args) {
         const { action, nodeId, properties, name, parentId } = args;
         const scene = cc.director.getScene();
@@ -743,7 +827,7 @@ module.exports = {
             }
 
         } else if (action === "update") {
-            let node = cc.engine.getInstanceById(nodeId);
+            let node = findNode(nodeId);
             if (node) {
                 let particleSystem = node.getComponent(cc.ParticleSystem);
                 if (!particleSystem) {
@@ -761,7 +845,7 @@ module.exports = {
             }
 
         } else if (action === "get_info") {
-            let node = cc.engine.getInstanceById(nodeId);
+            let node = findNode(nodeId);
             if (node) {
                 let ps = node.getComponent(cc.ParticleSystem);
                 if (ps) {
@@ -791,9 +875,14 @@ module.exports = {
         }
     },
 
+    /**
+     * 控制节点的动画组件 (播放、暂停、停止等)
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (action, nodeId, clipName)
+     */
     "manage-animation": function (event, args) {
         const { action, nodeId, clipName } = args;
-        const node = cc.engine.getInstanceById(nodeId);
+        const node = findNode(nodeId);
 
         if (!node) {
             if (event.reply) event.reply(new Error(`Node not found: ${nodeId}`));

@@ -14,7 +14,11 @@ let serverConfig = {
 	active: false,
 };
 
-// 封装日志函数，同时发送给面板和编辑器控制台
+/**
+ * 封装日志函数，同时发送给面板、保存到内存并在编辑器控制台打印
+ * @param {'info' | 'success' | 'warn' | 'error'} type 日志类型
+ * @param {string} message 日志内容
+ */
 function addLog(type, message) {
 	const logEntry = {
 		time: new Date().toLocaleTimeString(),
@@ -33,10 +37,18 @@ function addLog(type, message) {
 	}
 }
 
+/**
+ * 获取完整的日志内容（文本格式）
+ * @returns {string} 拼接后的日志字符串
+ */
 function getLogContent() {
 	return logBuffer.map(entry => `[${entry.time}] [${entry.type}] ${entry.content}`).join('\n');
 }
 
+/**
+ * 生成新场景的 JSON 模板数据
+ * @returns {string} 场景数据的 JSON 字符串
+ */
 const getNewSceneTemplate = () => {
 	// 尝试获取 UUID 生成函数
 	let newId = "";
@@ -74,11 +86,15 @@ const getNewSceneTemplate = () => {
 	return JSON.stringify(sceneData);
 };
 
+/**
+ * 获取所有支持的 MCP 工具列表定义
+ * @returns {Array<Object>} 工具定义数组
+ */
 const getToolsList = () => {
 	return [
 		{
 			name: "get_selected_node",
-			description: "获取当前编辑器中选中的节点 ID",
+			description: "获取当前编辑器中选中的节点 ID。建议获取后立即调用 get_scene_hierarchy 确认该节点是否仍存在于当前场景中。",
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
@@ -105,7 +121,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "update_node_transform",
-			description: "修改节点的坐标、缩放或颜色",
+			description: "修改节点的坐标、缩放或颜色。执行前必须调用 get_scene_hierarchy 确保 node ID 有效。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -158,7 +174,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_node",
-			description: "在当前场景中创建一个新节点",
+			description: "在当前场景中创建一个新节点。重要提示：1. 如果指定 parentId，必须先调用 get_scene_hierarchy 确保该父节点真实存在。2. 类型说明：'sprite' (100x100 尺寸 + 默认贴图), 'button' (150x50 尺寸 + 深色底图 + Button组件), 'label' (120x40 尺寸 + Label组件), 'empty' (纯空节点)。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -169,7 +185,7 @@ const getToolsList = () => {
 					},
 					type: {
 						type: "string",
-						enum: ["empty", "sprite", "label"],
+						enum: ["empty", "sprite", "label", "button"],
 						description: "节点预设类型",
 					},
 				},
@@ -178,7 +194,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_components",
-			description: "管理节点组件。重要提示：在执行 'add' 操作前，请务必先通过 'get' 操作检查节点上是否已存在同类型的组件，以避免重复添加导致逻辑异常。",
+			description: "管理节点组件。重要提示：1. 操作前必须调用 get_scene_hierarchy 确认 nodeId 对应的节点仍然存在。2. 添加前先用 'get' 检查是否已存在。3. 添加 cc.Sprite 后必须设置 spriteFrame 属性，否则节点不显示。4. 创建按钮时，请确保目标节点有足够的 width 和 height 作为点击区域。",
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -486,6 +502,9 @@ const getToolsList = () => {
 
 module.exports = {
 	"scene-script": "scene-script.js",
+	/**
+	 * 插件加载时的回调
+	 */
 	load() {
 		addLog("info", "MCP Bridge Plugin Loaded");
 		// 读取配置
@@ -501,15 +520,25 @@ module.exports = {
 			}, 1000);
 		}
 	},
-	// 获取配置文件的辅助函数
+	/**
+	 * 获取插件配置文件的辅助函数
+	 * @returns {Object} Editor.Profile 实例
+	 */
 	getProfile() {
 		// 'local' 表示存储在项目本地（local/mcp-bridge.json）
 		return Editor.Profile.load("profile://local/mcp-bridge.json", "mcp-bridge");
 	},
 
+	/**
+	 * 插件卸载时的回调
+	 */
 	unload() {
 		this.stopServer();
 	},
+	/**
+	 * 启动 HTTP 服务器
+	 * @param {number} port 监听端口
+	 */
 	startServer(port) {
 		if (mcpServer) this.stopServer();
 
@@ -711,6 +740,12 @@ module.exports = {
 		}
 	},
 
+	/**
+	 * 处理来自 HTTP 的 MCP 调用请求
+	 * @param {string} name 工具名称
+	 * @param {Object} args 工具参数
+	 * @param {Function} callback 完成回调 (err, result)
+	 */
 	handleMcpCall(name, args, callback) {
 		if (isSceneBusy && (name === "save_scene" || name === "create_node")) {
 			return callback("编辑器正忙（正在处理场景），请稍候。");
@@ -790,6 +825,10 @@ module.exports = {
 				break;
 
 			case "create_node":
+				if (args.type === "sprite" || args.type === "button") {
+					const splashUuid = Editor.assetdb.urlToUuid("db://internal/image/default_sprite_splash.png/default_sprite_splash");
+					args.defaultSpriteUuid = splashUuid;
+				}
 				Editor.Scene.callSceneScript("mcp-bridge", "create-node", args, callback);
 				break;
 
@@ -905,7 +944,11 @@ module.exports = {
 		}
 	},
 
-	// 管理脚本文件
+	/**
+	 * 管理项目中的脚本文件 (TS/JS)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	manageScript(args, callback) {
 		const { action, path: scriptPath, content } = args;
 
@@ -1005,7 +1048,11 @@ export default class NewScript extends cc.Component {
 		}
 	},
 
-	// 批处理执行
+	/**
+	 * 批量执行多个 MCP 工具操作
+	 * @param {Object} args 参数 (operations 数组)
+	 * @param {Function} callback 完成回调
+	 */
 	batchExecute(args, callback) {
 		const { operations } = args;
 		const results = [];
@@ -1027,7 +1074,11 @@ export default class NewScript extends cc.Component {
 		});
 	},
 
-	// 管理资源
+	/**
+	 * 通用的资源管理函数 (创建、删除、移动等)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	manageAsset(args, callback) {
 		const { action, path, targetPath, content } = args;
 
@@ -1095,7 +1146,11 @@ export default class NewScript extends cc.Component {
 		}
 	},
 
-	// 场景管理
+	/**
+	 * 场景相关的资源管理 (创建、克隆场景等)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	sceneManagement(args, callback) {
 		const { action, path, targetPath, name } = args;
 
@@ -1262,7 +1317,11 @@ export default class NewScript extends cc.Component {
 		}
 	},
 
-	// 管理编辑器
+	/**
+	 * 管理编辑器状态 (选中对象、刷新等)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	manageEditor(args, callback) {
 		const { action, target, properties } = args;
 
@@ -1415,7 +1474,11 @@ export default class NewScript extends cc.Component {
 	},
 
 
-	// 应用文本编辑
+	/**
+	 * 对文件应用一系列精确的文本编辑操作
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	applyTextEdits(args, callback) {
 		const { filePath, edits } = args;
 

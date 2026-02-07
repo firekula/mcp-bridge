@@ -123,15 +123,27 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 7. create_node
 
-- **描述**: 在当前场景中创建一个新节点。对于 Canvas/Label 类型，会自动添加对应组件。
+- **描述**: 在当前场景中创建一个新节点。
+- **重要提示**: 
+    1. 如果指定了 `parentId`，必须先通过 `get_scene_hierarchy` 确认该 UUID 对应的父节点仍然存在。
+    2. **预设类型差异**：
+        - `empty`: 纯空节点，无组件，不带贴图。
+        - `sprite`: 自动添加 Sprite 组件，默认尺寸 100x100，并带有引擎默认贴图占位。
+        - `button`: 自动添加 Sprite 和 Button 组件，默认尺寸 **150x50**，背景色设为深色以便看清文字，并带有默认贴图。
+        - `label`: 自动添加 Label 组件，默认尺寸 120x40。
 - **参数**:
     - `name`: 节点名称
-    - `parentId`: 父节点 UUID (可选，不传则挂在场景根部)
-    - `type`: 节点预设类型（`empty`, `sprite`, `label`, `canvas`）
+    - `parentId`: 父节点 UUID (可选)
+    - `type`: 节点预设类型（`empty`, `sprite`, `label`, `button`）
 
 ### 8. manage_components
 
-- **描述**: 管理节点组件。**重要最佳实践**：在执行 `add` 操作前，建议先通过 `get` 操作检查节点上是否已存在同类型的组件，以避免重复添加。
+- **描述**: 管理节点组件。
+- **重要最佳实践**:
+    1. **引用验证**：操作前必须调用 `get_scene_hierarchy` 确认 `nodeId` 对应的节点真实存在（防止由于场景重置或节点删除导致的引用失效）。
+    2. 在执行 `add` 操作前，建议先通过 `get` 操作检查是否已存在同类组件。
+    3. 添加 `cc.Sprite` 后请务必设置其 `spriteFrame` 属性，否则节点将不显示。
+    4. 创建按钮时，请确保目标节点有正数尺寸（`width`/`height`）作为点击区域。
 - **参数**:
     - `nodeId`: 节点 UUID
     - `action`: 操作类型（`add`, `remove`, `get`, `update`）
