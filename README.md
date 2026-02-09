@@ -113,7 +113,8 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `id`: 节点 UUID
     - `x`, `y`: 坐标
     - `scaleX`, `scaleY`: 缩放值
-    - `color`: HEX 颜色代码（如 #FF0000）(支持撤销操作)
+    - `color`: HEX 颜色代码（如 #FF0000）
+- **重要提示**: 执行前必须调用 `get_scene_hierarchy` 确保 `id` 有效，防止操作不存在的节点。
 
 ### 6. open_scene
 
@@ -149,7 +150,11 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `action`: 操作类型（`add`, `remove`, `get`, `update`）
     - `componentType`: 组件类型，如 `cc.Sprite`（用于 `add`/`update` 操作）
     - `componentId`: 组件 ID（用于 `remove`/`update` 操作）
-    - `properties`: 组件属性（用于 `add`/`update` 操作）。**智能特性**：如果属性期望组件类型但传入节点 UUID，插件会自动查找匹配组件。
+    - `properties`: 组件属性（用于 `add`/`update` 操作）。
+- **智能特性**：
+    1. 如果属性期望组件类型但传入节点 UUID，插件会自动查找匹配组件。
+    2. 对于资源类属性（如 `cc.Prefab`, `sp.SkeletonData`），传递资源的 UUID，插件会自动处理异步加载与序列化，确保不出现 Type Error。
+- **操作规则 (Subject Validation Rule)**：赋值或更新前必须确保目标属性在组件上真实存在。
 
 ### 9. manage_script
 
@@ -286,7 +291,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 24. manage_vfx
 
-- **描述**: 特效(粒子)管理
+- **描述**: 特效(粒子)管理。重要提示：操作前必须确认父节点或目标节点的有效性。
 - **参数**:
     - `action`: 操作类型 (`create`, `update`, `get_info`)
     - `nodeId`: 节点 UUID (用于 `update`, `get_info`)
@@ -367,6 +372,17 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - HTTP 服务会占用指定端口，请确保端口未被其他程序占用
 - 插件会自动标记场景为"已修改"，请注意保存场景
 - 不同版本的 Cocos Creator 可能会有 API 差异，请根据实际情况调整
+
+## AI 操作安全守则 (Subject Validation Rule)
+
+为了保证自动化操作的稳定性，AI 在使用本插件工具时必须遵循以下守则：
+
+1.  **确定性优先**：任何对节点、组件、属性的操作，都必须建立在“主体已确认存在”的基础上。
+2.  **校验流程**：
+    *   **节点校验**：操作前必须使用 `get_scene_hierarchy` 确认节点。
+    *   **组件校验**：操作组件前必须使用 `get`（通过 `manage_components`）确认组件存在。
+    *   **属性校验**：更新属性前必须确认属性名准确无误。
+3.  **禁止假设**：禁止盲目尝试对不存在的对象或属性进行修改。
 
 
 ## 贡献

@@ -298,71 +298,98 @@ module.exports = {
                 if (component[key] !== undefined) {
                     let finalValue = value;
 
-                    // 【关键修复】智能组件引用赋值
-                    // 如果属性期望一个组件 (cc.Component子类) 但传入的是节点/UUID，尝试自动获取组件
+                    // 【核心逻辑】智能类型识别与赋值
                     try {
-                        // 检查传入值是否是字符串 (可能是 UUID) 或 Node 对象
-                        let targetNode = null;
-                        if (typeof value === 'string') {
-                            targetNode = findNode(value);
-
-                            if (targetNode) {
-                                Editor.log(`[scene-script] Resolved node: ${value} -> ${targetNode.name}`);
-                            } else if (value.length > 20) {
-                                Editor.warn(`[scene-script] Failed to resolve node: ${value}`);
-                            }
-                        } else if (value instanceof cc.Node) {
-                            targetNode = value;
+                        const attrs = (cc.Class.Attr.getClassAttrs && cc.Class.Attr.getClassAttrs(compClass)) || {};
+                        let propertyType = attrs[key] ? attrs[key].type : null;
+                        if (!propertyType && attrs[key + '$_$ctor']) {
+                            propertyType = attrs[key + '$_$ctor'];
                         }
 
-                        if (targetNode) {
-                            // 尝试获取属性定义类型
-                            let typeName = null;
+                        let isAsset = propertyType && (propertyType.prototype instanceof cc.Asset || propertyType === cc.Asset || propertyType === cc.Prefab || propertyType === cc.SpriteFrame);
 
-                            // 优先尝试 getClassAttrs (Cocos 2.x editor environment)
-                            if (cc.Class.Attr.getClassAttrs) {
-                                const attrs = cc.Class.Attr.getClassAttrs(compClass);
-                                // attrs 是整个属性字典 { name: { type: ... } }
-                                if (attrs) {
-                                    if (attrs[key] && attrs[key].type) {
-                                        typeName = attrs[key].type;
-                                    } else if (attrs[key + '$_$ctor']) {
-                                        // 编辑器环境下，自定义组件类型可能存储在 $_$ctor 后缀中
-                                        typeName = attrs[key + '$_$ctor'];
+                        // 启发式：如果属性名包含 prefab/sprite/texture 等，且值为 UUID 且不是节点
+                        if (!isAsset && typeof value === 'string' && value.length > 20) {
+                            const lowerKey = key.toLowerCase();
+                            const assetKeywords = ['prefab', 'sprite', 'texture', 'material', 'skeleton', 'spine', 'atlas', 'font', 'audio', 'data'];
+                            if (assetKeywords.some(k => lowerKey.includes(k))) {
+                                if (!findNode(value)) {
+                                    isAsset = true;
+                                }
+                            }
+                        }
+
+                        if (isAsset) {
+                            // 1. 处理资源引用 (cc.Prefab, cc.SpriteFrame 等)
+                            if (typeof value === 'string' && value.length > 20) {
+                                // 在场景进程中异步加载资源，这能确保 serialization 时是正确的老格式对象
+                                cc.AssetLibrary.loadAsset(value, (err, asset) => {
+                                    if (!err && asset) {
+                                        component[key] = asset;
+                                        Editor.log(`[scene-script] Successfully loaded and assigned asset for ${key}: ${asset.name}`);
+                                        // 通知编辑器 UI 更新
+                                        const compIndex = node._components.indexOf(component);
+                                        if (compIndex !== -1) {
+                                            Editor.Ipc.sendToPanel('scene', 'scene:set-property', {
+                                                id: node.uuid,
+                                                path: `_components.${compIndex}.${key}`,
+                                                type: 'Object',
+                                                value: { uuid: value },
+                                                isSubProp: false
+                                            });
+                                        }
+                                        Editor.Ipc.sendToMain("scene:dirty");
+                                    } else {
+                                        Editor.warn(`[scene-script] Failed to load asset ${value} for ${key}: ${err}`);
+                                    }
+                                });
+                                return; // 跳过后续的直接赋值
+                            }
+                        } else if (propertyType && (propertyType.prototype instanceof cc.Component || propertyType === cc.Component || propertyType === cc.Node)) {
+                            // 2. 处理节点或组件引用
+                            const targetNode = findNode(value);
+                            if (targetNode) {
+                                if (propertyType === cc.Node) {
+                                    finalValue = targetNode;
+                                } else {
+                                    const targetComp = targetNode.getComponent(propertyType);
+                                    if (targetComp) {
+                                        finalValue = targetComp;
+                                    } else {
+                                        Editor.warn(`[scene-script] Component ${propertyType.name} not found on node ${targetNode.name}`);
                                     }
                                 }
+                                Editor.log(`[scene-script] Applied Reference for ${key}: ${targetNode.name}`);
+                            } else if (value && value.length > 20) {
+                                // 如果明确是组件/节点类型但找不到，才报错
+                                Editor.warn(`[scene-script] Failed to resolve target node/comp for ${key}: ${value}`);
                             }
-                            // 兼容性尝试 getClassAttributes
-                            else if (cc.Class.Attr.getClassAttributes) {
-                                const attrs = cc.Class.Attr.getClassAttributes(compClass, key);
-                                if (attrs && attrs.type) {
-                                    typeName = attrs.type;
-                                }
-                            }
-
-                            if (typeName && (typeName.prototype instanceof cc.Component || typeName === cc.Component)) {
-                                // 这是一个组件属性
-                                const targetComp = targetNode.getComponent(typeName);
-                                if (targetComp) {
-                                    finalValue = targetComp;
-                                    Editor.log(`[scene-script] Auto-resolved component ${typeName.name} from node ${targetNode.name}`);
+                        } else {
+                            // 3. 通用启发式 (找不到类型时的 fallback)
+                            if (typeof value === 'string' && value.length > 20) {
+                                const targetNode = findNode(value);
+                                if (targetNode) {
+                                    finalValue = targetNode;
+                                    Editor.log(`[scene-script] Heuristic resolved Node for ${key}: ${targetNode.name}`);
                                 } else {
-                                    Editor.warn(`[scene-script] Component ${typeName.name} not found on node ${targetNode.name}`);
-                                }
-                            } else if (!typeName) {
-                                // 无法确切知道类型，尝试常见的组件类型推断 (heuristic)
-                                const lowerKey = key.toLowerCase();
-                                if (lowerKey.includes('label')) {
-                                    const l = targetNode.getComponent(cc.Label);
-                                    if (l) finalValue = l;
-                                } else if (lowerKey.includes('sprite')) {
-                                    const s = targetNode.getComponent(cc.Sprite);
-                                    if (s) finalValue = s;
+                                    // 找不到节点且是 UUID -> 视为资源
+                                    const compIndex = node._components.indexOf(component);
+                                    if (compIndex !== -1) {
+                                        Editor.Ipc.sendToPanel('scene', 'scene:set-property', {
+                                            id: node.uuid,
+                                            path: `_components.${compIndex}.${key}`,
+                                            type: 'Object',
+                                            value: { uuid: value },
+                                            isSubProp: false
+                                        });
+                                        Editor.log(`[scene-script] Heuristic resolved Asset via IPC for ${key}: ${value}`);
+                                    }
+                                    return;
                                 }
                             }
                         }
                     } catch (e) {
-                        // 忽略类型检查错误
+                        Editor.warn(`[scene-script] Property resolution failed for ${key}: ${e.message}`);
                     }
 
                     component[key] = finalValue;

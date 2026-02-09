@@ -91,15 +91,16 @@ const getNewSceneTemplate = () => {
  * @returns {Array<Object>} 工具定义数组
  */
 const getToolsList = () => {
+	const globalPrecautions = "【AI 安全守则】: 1. 执行任何写操作前必须先通过 get_scene_hierarchy 或 manage_components(get) 验证主体存在。 2. 严禁基于假设盲目猜测属性名。 3. 资源属性（如 cc.Prefab）必须通过 UUID 进行赋值。";
 	return [
 		{
 			name: "get_selected_node",
-			description: "获取当前编辑器中选中的节点 ID。建议获取后立即调用 get_scene_hierarchy 确认该节点是否仍存在于当前场景中。",
+			description: `${globalPrecautions} 获取当前编辑器中选中的节点 ID。建议获取后立即调用 get_scene_hierarchy 确认该节点是否仍存在于当前场景中。`,
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
 			name: "set_node_name",
-			description: "修改指定节点的名称",
+			description: `${globalPrecautions} 修改指定节点的名称`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -111,17 +112,17 @@ const getToolsList = () => {
 		},
 		{
 			name: "save_scene",
-			description: "保存当前场景的修改",
+			description: `${globalPrecautions} 保存当前场景的修改`,
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
 			name: "get_scene_hierarchy",
-			description: "获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）",
+			description: `${globalPrecautions} 获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）`,
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
 			name: "update_node_transform",
-			description: "修改节点的坐标、缩放或颜色。执行前必须调用 get_scene_hierarchy 确保 node ID 有效。",
+			description: `${globalPrecautions} 修改节点的坐标、缩放或颜色。执行前必须调用 get_scene_hierarchy 确保 node ID 有效。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -137,7 +138,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_scene",
-			description: "在 assets 目录下创建一个新的场景文件。创建并通过 open_scene 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。",
+			description: `${globalPrecautions} 在 assets 目录下创建一个新的场景文件。创建并通过 open_scene 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -148,7 +149,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_prefab",
-			description: "将场景中的某个节点保存为预制体资源",
+			description: `${globalPrecautions} 将场景中的某个节点保存为预制体资源`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -160,7 +161,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "open_scene",
-			description: "打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒。重要：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。",
+			description: `${globalPrecautions} 打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒。重要：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -174,7 +175,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_node",
-			description: "在当前场景中创建一个新节点。重要提示：1. 如果指定 parentId，必须先调用 get_scene_hierarchy 确保该父节点真实存在。2. 类型说明：'sprite' (100x100 尺寸 + 默认贴图), 'button' (150x50 尺寸 + 深色底图 + Button组件), 'label' (120x40 尺寸 + Label组件), 'empty' (纯空节点)。",
+			description: `${globalPrecautions} 在当前场景中创建一个新节点。重要提示：1. 如果指定 parentId，必须先通过 get_scene_hierarchy 确保该父节点真实存在且未被删除。2. 类型说明：'sprite' (100x100 尺寸 + 默认贴图), 'button' (150x50 尺寸 + 深色底图 + Button组件), 'label' (120x40 尺寸 + Label组件), 'empty' (纯空节点)。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -194,7 +195,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_components",
-			description: "管理节点组件。重要提示：1. 操作前必须调用 get_scene_hierarchy 确认 nodeId 对应的节点仍然存在。2. 添加前先用 'get' 检查是否已存在。3. 添加 cc.Sprite 后必须设置 spriteFrame 属性，否则节点不显示。4. 创建按钮时，请确保目标节点有足够的 width 和 height 作为点击区域。",
+			description: `${globalPrecautions} 管理节点组件。重要提示：1. 操作前必须调用 get_scene_hierarchy 确认 nodeId 对应的节点仍然存在。2. 添加前先用 'get' 检查是否已存在。3. 添加 cc.Sprite 后必须设置 spriteFrame 属性，否则节点不显示。4. 创建按钮时，请确保目标节点有足够的 width 和 height 作为点击区域。5. 赋值或更新属性前，必须确保目标属性在组件上真实存在，严禁盲目操作不存在的属性。6. 对于资源类属性（如 cc.Prefab, sp.SkeletonData），传递资源的 UUID。插件会自动进行异步加载并正确序列化，避免 Inspector 出现 Type Error。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -209,7 +210,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_script",
-			description: "管理脚本文件。注意：创建或修改脚本后，编辑器需要时间进行编译（通常几秒钟）。新脚本在编译完成前无法作为组件添加到节点。建议在 create 后调用 refresh_editor，或等待一段时间后再使用 manage_components。",
+			description: `${globalPrecautions} 管理脚本文件。注意：创建或修改脚本后，编辑器需要时间进行编译（通常几秒钟）。新脚本在编译完成前无法作为组件添加到节点。建议在 create 后调用 refresh_editor，或等待一段时间后再使用 manage_components。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -223,7 +224,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "batch_execute",
-			description: "批处理执行多个操作",
+			description: `${globalPrecautions} 批处理执行多个操作`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -245,7 +246,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_asset",
-			description: "管理资源",
+			description: `${globalPrecautions} 管理资源`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -259,7 +260,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "scene_management",
-			description: "场景管理",
+			description: `${globalPrecautions} 场景管理`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -277,7 +278,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "prefab_management",
-			description: "预制体管理",
+			description: `${globalPrecautions} 预制体管理`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -295,7 +296,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_editor",
-			description: "管理编辑器",
+			description: `${globalPrecautions} 管理编辑器`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -316,7 +317,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "find_gameobjects",
-			description: "查找游戏对象",
+			description: `${globalPrecautions} 查找游戏对象`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -328,7 +329,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_material",
-			description: "管理材质",
+			description: `${globalPrecautions} 管理材质`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -341,7 +342,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_texture",
-			description: "管理纹理",
+			description: `${globalPrecautions} 管理纹理`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -354,7 +355,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "execute_menu_item",
-			description: "执行菜单项",
+			description: `${globalPrecautions} 执行菜单项`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -365,7 +366,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "apply_text_edits",
-			description: "应用文本编辑",
+			description: `${globalPrecautions} 应用文本编辑`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -377,7 +378,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "read_console",
-			description: "读取控制台",
+			description: `${globalPrecautions} 读取控制台`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -388,7 +389,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "validate_script",
-			description: "验证脚本",
+			description: `${globalPrecautions} 验证脚本`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -399,7 +400,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "find_in_file",
-			description: "在项目中全局搜索文本内容",
+			description: `${globalPrecautions} 在项目中全局搜索文本内容`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -417,7 +418,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_undo",
-			description: "管理编辑器的撤销和重做历史",
+			description: `${globalPrecautions} 管理编辑器的撤销和重做历史`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -433,7 +434,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_vfx",
-			description: "管理全场景特效 (粒子系统)",
+			description: `${globalPrecautions} 管理全场景特效 (粒子系统)。重要提示：在创建或更新前，必须通过 get_scene_hierarchy 或 manage_components 确认父节点或目标节点的有效性。严禁对不存在的对象进行操作。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -469,7 +470,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "get_sha",
-			description: "获取指定文件的 SHA-256 哈希值",
+			description: `${globalPrecautions} 获取指定文件的 SHA-256 哈希值`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -480,7 +481,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_animation",
-			description: "管理节点的动画组件",
+			description: `${globalPrecautions} 管理节点的动画组件。重要提示：在执行 play/pause 等操作前，必须先确认节点及其 Animation 组件存在。严禁操作空引用。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -1570,9 +1571,9 @@ export default class NewScript extends cc.Component {
 			'File/Save': 'scene:stash-and-save', // 别名
 			'Edit/Undo': 'scene:undo',
 			'Edit/Redo': 'scene:redo',
-			'Edit/Delete': 'scene:delete-selected',
-			'Delete': 'scene:delete-selected',
-			'delete': 'scene:delete-selected',
+			'Edit/Delete': 'scene:delete-nodes',
+			'Delete': 'scene:delete-nodes',
+			'delete': 'scene:delete-nodes',
 			'Node/Create Empty Node': 'scene:create-node-by-classid', // 简化的映射，通常需要参数
 			'Project/Build': 'app:build-project',
 		};
@@ -1592,8 +1593,19 @@ export default class NewScript extends cc.Component {
 		if (menuMap[menuPath]) {
 			const ipcMsg = menuMap[menuPath];
 			try {
-				Editor.Ipc.sendToMain(ipcMsg);
-				callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg}`);
+				// 获取当前选中的节点进行删除（如果该消息是删除操作）
+				if (ipcMsg === 'scene:delete-nodes') {
+					const selection = Editor.Selection.curSelection("node");
+					if (selection.length > 0) {
+						Editor.Ipc.sendToMain(ipcMsg, selection);
+						callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg} with ${selection.length} nodes`);
+					} else {
+						callback("No nodes selected for deletion");
+					}
+				} else {
+					Editor.Ipc.sendToMain(ipcMsg);
+					callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg}`);
+				}
 			} catch (err) {
 				callback(`Failed to execute IPC ${ipcMsg}: ${err.message}`);
 			}
