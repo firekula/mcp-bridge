@@ -129,6 +129,8 @@ const getToolsList = () => {
 					id: { type: "string", description: "节点 UUID" },
 					x: { type: "number" },
 					y: { type: "number" },
+					width: { type: "number" },
+					height: { type: "number" },
 					scaleX: { type: "number" },
 					scaleY: { type: "number" },
 					color: { type: "string", description: "HEX 颜色代码如 #FF0000" },
@@ -354,7 +356,7 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					action: { type: "string", enum: ["create", "delete", "get_info"], description: "操作类型" },
+					action: { type: "string", enum: ["create", "delete", "get_info", "update"], description: "操作类型" },
 					path: { type: "string", description: "纹理路径，如 db://assets/textures/NewTexture.png" },
 					properties: { type: "object", description: "纹理属性" },
 				},
@@ -1630,16 +1632,65 @@ CCProgram fs %{
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
-				// 【修复】Cocos 2.4.x 无法直接用 Editor.assetdb.create 创建带后缀的纹理（会校验内容）
-				// 我们需要先物理写入一个 1x1 的透明图片，再刷新数据库
-				const base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+				// 1. 准备文件内容 (优先使用 properties.content，否则使用默认 1x1)
+				let base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+				if (properties && properties.content) {
+					base64Data = properties.content;
+				}
 				const buffer = Buffer.from(base64Data, 'base64');
 
 				try {
+					// 2. 写入物理文件
 					fs.writeFileSync(absolutePath, buffer);
-					Editor.assetdb.refresh(path, (err) => {
+
+					// 3. 刷新该资源以生成 Meta
+					Editor.assetdb.refresh(path, (err, results) => {
 						if (err) return callback(err);
-						callback(null, `Texture created and refreshed at ${path}`);
+
+						// 4. 如果有 9-slice 设置，更新 Meta
+						if (properties && (properties.border || properties.type)) {
+							const uuid = Editor.assetdb.urlToUuid(path);
+							if (!uuid) return callback(null, `Texture created but UUID not found immediately.`);
+
+							// 稍微延迟确保 Meta 已生成
+							setTimeout(() => {
+								const meta = Editor.assetdb.loadMeta(uuid);
+								if (meta) {
+									let changed = false;
+									if (properties.type) {
+										meta.type = properties.type;
+										changed = true;
+									}
+
+									// 设置 9-slice (border)
+									// 注意：Cocos 2.4 纹理 Meta 中 subMetas 下通常有一个与纹理同名的 key (或者主要的一个 key)
+									if (properties.border) {
+										// 确保类型是 sprite
+										meta.type = 'sprite';
+
+										// 找到 SpriteFrame 的 subMeta
+										const subKeys = Object.keys(meta.subMetas);
+										if (subKeys.length > 0) {
+											const subMeta = meta.subMetas[subKeys[0]];
+											subMeta.border = properties.border; // [top, bottom, left, right]
+											changed = true;
+										}
+									}
+
+									if (changed) {
+										Editor.assetdb.saveMeta(uuid, JSON.stringify(meta), (err) => {
+											if (err) Editor.warn(`Failed to save meta for ${path}: ${err}`);
+											callback(null, `Texture created and meta updated at ${path}`);
+										});
+										return;
+									}
+								}
+								callback(null, `Texture created at ${path}`);
+							}, 100);
+						} else {
+							callback(null, `Texture created at ${path}`);
+						}
 					});
 				} catch (e) {
 					callback(`Failed to write texture file: ${e.message}`);
@@ -1660,6 +1711,110 @@ CCProgram fs %{
 					callback(null, info || { url: path, uuid: uuid, exists: true });
 				} else {
 					callback(`Texture not found: ${path}`);
+				}
+				break;
+			case "update":
+				if (!Editor.assetdb.exists(path)) {
+					return callback(`Texture not found at ${path}`);
+				}
+				const uuid = Editor.assetdb.urlToUuid(path);
+				let meta = Editor.assetdb.loadMeta(uuid);
+
+				// Fallback: 如果 Editor.assetdb.loadMeta 失败 (API 偶尔不稳定)，尝试直接读取文件系统中的 .meta 文件
+				if (!meta) {
+					try {
+						const fspath = Editor.assetdb.urlToFspath(path);
+						const metaPath = fspath + ".meta";
+						if (fs.existsSync(metaPath)) {
+							const metaContent = fs.readFileSync(metaPath, "utf-8");
+							meta = JSON.parse(metaContent);
+							addLog("info", `[manage_texture] Loaded meta from fs fallback: ${metaPath}`);
+						}
+					} catch (e) {
+						addLog("warn", `[manage_texture] Meta fs fallback failed: ${e.message}`);
+					}
+				}
+
+				if (!meta) {
+					return callback(`Failed to load meta for ${path}`);
+				}
+
+				let changed = false;
+				if (properties) {
+					// 更新类型
+					if (properties.type) {
+						if (meta.type !== properties.type) {
+							meta.type = properties.type;
+							changed = true;
+						}
+					}
+
+					// 更新 9-slice border
+					if (properties.border) {
+						// 确保类型是 sprite
+						if (meta.type !== 'sprite') {
+							meta.type = 'sprite';
+							changed = true;
+						}
+
+						// 找到 SubMeta
+						// Cocos Meta 结构: { subMetas: { "textureName": { ... } } }
+						// 注意：Cocos 2.x 的 meta 结构因版本而异，旧版可能使用 border: [t, b, l, r] 数组，
+						// 而新版 (如 2.3.x+) 通常使用 borderTop, borderBottom 等独立字段。
+						// 此处逻辑实现了兼容性处理。
+						const subKeys = Object.keys(meta.subMetas);
+						if (subKeys.length > 0) {
+							const subMeta = meta.subMetas[subKeys[0]];
+							const newBorder = properties.border; // [top, bottom, left, right]
+
+							// 方式 1: standard array style
+							if (subMeta.border !== undefined) {
+								const oldBorder = subMeta.border;
+								if (!oldBorder ||
+									oldBorder[0] !== newBorder[0] ||
+									oldBorder[1] !== newBorder[1] ||
+									oldBorder[2] !== newBorder[2] ||
+									oldBorder[3] !== newBorder[3]) {
+									subMeta.border = newBorder;
+									changed = true;
+								}
+							}
+							// 方式 2: individual fields style (common in 2.3.x)
+							else if (subMeta.borderTop !== undefined) {
+								// top, bottom, left, right
+								if (subMeta.borderTop !== newBorder[0] ||
+									subMeta.borderBottom !== newBorder[1] ||
+									subMeta.borderLeft !== newBorder[2] ||
+									subMeta.borderRight !== newBorder[3]) {
+
+									subMeta.borderTop = newBorder[0];
+									subMeta.borderBottom = newBorder[1];
+									subMeta.borderLeft = newBorder[2];
+									subMeta.borderRight = newBorder[3];
+									changed = true;
+								}
+							}
+							// 方式 3: 如果都没有，尝试写入 individual fields
+							else {
+								subMeta.borderTop = newBorder[0];
+								subMeta.borderBottom = newBorder[1];
+								subMeta.borderLeft = newBorder[2];
+								subMeta.borderRight = newBorder[3];
+								changed = true;
+							}
+						}
+					}
+				}
+
+				if (changed) {
+					// 使用 saveMeta 或者 fs 写入
+					// 为了安全，如果 loadMeta 失败了，safeMeta 可能也会失败，所以这里尽量用 API，不行再 fallback (暂且只用 API)
+					Editor.assetdb.saveMeta(uuid, JSON.stringify(meta), (err) => {
+						if (err) return callback(`Failed to save meta: ${err}`);
+						callback(null, `Texture updated at ${path}`);
+					});
+				} else {
+					callback(null, `No changes needed for ${path}`);
 				}
 				break;
 			default:

@@ -112,12 +112,21 @@ module.exports = {
             Editor.log(`[scene-script] Node found: ${node.name}, Current Pos: (${node.x}, ${node.y})`);
 
             if (x !== undefined) {
-                node.x = Number(x); // 强制转换确保类型正确
+                node.x = Number(x);
                 Editor.log(`[scene-script] Set x to ${node.x}`);
             }
             if (y !== undefined) {
                 node.y = Number(y);
                 Editor.log(`[scene-script] Set y to ${node.y}`);
+            }
+            // [新增] 支持设置节点宽高 (用于测试 9-slice 等需要调整尺寸的情况)
+            if (args.width !== undefined) {
+                node.width = Number(args.width);
+                Editor.log(`[scene-script] Set width to ${node.width}`);
+            }
+            if (args.height !== undefined) {
+                node.height = Number(args.height);
+                Editor.log(`[scene-script] Set height to ${node.height}`);
             }
             if (scaleX !== undefined) node.scaleX = Number(scaleX);
             if (scaleY !== undefined) node.scaleY = Number(scaleY);
@@ -368,7 +377,9 @@ module.exports = {
                                     }
                                 });
                             });
-                            return; // 跳过后续的直接赋值
+                            // 【重要修复】使用 continue 而不是 return，确保处理完 Asset 属性后
+                            // 还能继续处理后续的普通属性 (如 type, sizeMode 等)
+                            continue;
                         } else if (propertyType && (propertyType.prototype instanceof cc.Component || propertyType === cc.Component || propertyType === cc.Node)) {
                             // 2. 处理节点或组件引用
                             const targetNode = findNode(value);

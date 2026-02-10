@@ -48,5 +48,18 @@
 
 ---
 
-## 四、 总结
+## 四、 纹理与节点变换增强 (Texture & Transform Updates)
+
+### 1. `manage_texture` 工具增强
+- **新增 `update` 操作**: 支持修改现有纹理的类型（如 `texture` -> `sprite`）和九宫格边距 (`border`)。
+- **Meta 加载健壮性**: 修复了 `Editor.assetdb.loadMeta` 在某些情况下返回空值的问题，增加了读取文件系统 `.meta` 文件的 Fallback 机制。
+- **多版本兼容**: 针对 Cocos Creator 不同版本 `.meta` 文件结构差异（数组 vs 独立字段），实现了对 9-slice 数据写入的自动兼容。
+
+### 2. `update_node_transform` 工具增强
+- **新增尺寸控制**: 添加了 `width` 和 `height` 参数，允许 AI 直接调整节点大小（对于测试九宫格拉伸效果至关重要）。
+
+### 3. 关键 Bug 修复
+- **属性批量应用中断**: 修复了 `scene-script.js` 中 `applyProperties` 函数在处理 Asset 类型属性时错误使用 `return` 导致后续属性（如 `type`）被忽略的问题。现在改为 `continue`，确保所有属性都能被正确应用。
+
+## 五、 总结
 本次更新不仅修复了制约生产力的材质与资源同步 bug，还通过引入 `manage_shader` 和全方位的文档中文化，极大提升了开发者（及 AI 助手）在 Cocos Creator 2.4.x 环境下的操作体验。

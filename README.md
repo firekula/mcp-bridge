@@ -112,6 +112,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **参数**:
     - `id`: 节点 UUID
     - `x`, `y`: 坐标
+    - `width`, `height`: 节点宽高 (新增支持)
     - `scaleX`, `scaleY`: 缩放值
     - `color`: HEX 颜色代码（如 #FF0000）
 - **重要提示**: 执行前必须调用 `get_scene_hierarchy` 确保 `id` 有效，防止操作不存在的节点。
@@ -246,12 +247,15 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 - **描述**: 管理纹理
 - **参数**:
-    - `action`: 操作类型（`create`, `delete`, `get_info`）
-    - `path`: 纹理路径，如 `db://assets/textures/NewTexture.png`
-    - `properties`: 纹理属性（用于 `create` 操作）
-        - `width`: 宽度
-        - `height`: 高度
-        - `native`: 原生路径
+	- `action`: 操作类型（`create`, `delete`, `get_info`, `update`）
+	- `path`: 纹理路径，如 `db://assets/textures/NewTexture.png`
+	- `properties`: 纹理属性（用于 `create`/`update` 操作）
+		- `type`: 纹理类型（如 `sprite`, `texture`, `raw`）(用于 `update`)
+		- `border`: 九宫格边距数组 `[top, bottom, left, right]` (用于 `update`，仅当 type 为 sprite 时有效)
+		- `subMetas`: (内部使用)
+		- `width`: 宽度 (用于 `create` 生成占位图)
+		- `height`: 高度 (用于 `create` 生成占位图)
+		- `native`: 原生路径
 
 ### 18. execute_menu_item
 
