@@ -1040,9 +1040,9 @@ export default class NewScript extends cc.Component {
 							// 否则后续立即挂载脚本的操作(manage_components)会因找不到脚本 UUID 而失败。
 							Editor.assetdb.refresh(scriptPath, (refreshErr) => {
 								if (refreshErr) {
-									addLog("warn", `Refresh failed after script creation: ${refreshErr}`);
+									addLog("warn", `脚本创建后刷新失败: ${refreshErr}`);
 								}
-								callback(null, `Script created at ${scriptPath}`);
+								callback(null, `脚本已创建: ${scriptPath}`);
 							});
 						}
 					},
@@ -1076,7 +1076,7 @@ export default class NewScript extends cc.Component {
 				// 使用 fs 写入 + refresh，确保覆盖成功
 				const writeFsPath = Editor.assetdb.urlToFspath(scriptPath);
 				if (!writeFsPath) {
-					return callback(`Invalid path: ${scriptPath}`);
+					return callback(`路径无效: ${scriptPath}`);
 				}
 
 				try {
@@ -1133,7 +1133,7 @@ export default class NewScript extends cc.Component {
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(path)) {
-					return callback(`Asset already exists at ${path}`);
+					return callback(`资源已存在: ${path}`);
 				}
 				// 确保父目录存在
 				const fs = require("fs");
@@ -1144,16 +1144,16 @@ export default class NewScript extends cc.Component {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
 				Editor.assetdb.create(path, content || "", (err) => {
-					callback(err, err ? null : `Asset created at ${path}`);
+					callback(err, err ? null : `资源已创建: ${path}`);
 				});
 				break;
 
 			case "delete":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Asset not found at ${path}`);
+					return callback(`找不到资源: ${path}`);
 				}
 				Editor.assetdb.delete([path], (err) => {
-					callback(err, err ? null : `Asset deleted at ${path}`);
+					callback(err, err ? null : `资源已删除: ${path}`);
 				});
 				break;
 
@@ -1173,7 +1173,7 @@ export default class NewScript extends cc.Component {
 			case "get_info":
 				try {
 					if (!Editor.assetdb.exists(path)) {
-						return callback(`Asset not found: ${path}`);
+						return callback(`找不到资源: ${path}`);
 					}
 					const uuid = Editor.assetdb.urlToUuid(path);
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
@@ -1184,7 +1184,7 @@ export default class NewScript extends cc.Component {
 						callback(null, { url: path, uuid: uuid, exists: true });
 					}
 				} catch (e) {
-					callback(`Error getting asset info: ${e.message}`);
+					callback(`获取资源信息失败: ${e.message}`);
 				}
 				break;
 
@@ -1205,7 +1205,7 @@ export default class NewScript extends cc.Component {
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(path)) {
-					return callback(`Scene already exists at ${path}`);
+					return callback(`场景已存在: ${path}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(path);
@@ -1214,35 +1214,35 @@ export default class NewScript extends cc.Component {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
 				Editor.assetdb.create(path, getNewSceneTemplate(), (err) => {
-					callback(err, err ? null : `Scene created at ${path}`);
+					callback(err, err ? null : `场景已创建: ${path}`);
 				});
 				break;
 
 			case "delete":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Scene not found at ${path}`);
+					return callback(`找不到场景: ${path}`);
 				}
 				Editor.assetdb.delete([path], (err) => {
-					callback(err, err ? null : `Scene deleted at ${path}`);
+					callback(err, err ? null : `场景已删除: ${path}`);
 				});
 				break;
 
 			case "duplicate":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Scene not found at ${path}`);
+					return callback(`找不到场景: ${path}`);
 				}
 				if (!targetPath) {
-					return callback(`Target path is required for duplicate operation`);
+					return callback("复制操作需要目标路径");
 				}
 				if (Editor.assetdb.exists(targetPath)) {
-					return callback(`Target scene already exists at ${targetPath}`);
+					return callback(`目标场景已存在: ${targetPath}`);
 				}
 				// 【修复】Cocos 2.4.x 主进程中 Editor.assetdb 没有 loadAny
 				// 直接使用 fs 读取物理文件
 				try {
 					const sourceFsPath = Editor.assetdb.urlToFspath(path);
 					if (!sourceFsPath || !fs.existsSync(sourceFsPath)) {
-						return callback(`Failed to locate source scene file: ${path}`);
+						return callback(`定位源场景文件失败: ${path}`);
 					}
 					const content = fs.readFileSync(sourceFsPath, "utf-8");
 
@@ -1257,7 +1257,7 @@ export default class NewScript extends cc.Component {
 						if (err) return callback(err);
 						// 【增加】关键刷新，确保数据库能查到新文件
 						Editor.assetdb.refresh(targetPath, (refreshErr) => {
-							callback(refreshErr, refreshErr ? null : `Scene duplicated from ${path} to ${targetPath}`);
+							callback(refreshErr, refreshErr ? null : `场景已从 ${path} 复制到 ${targetPath}`);
 						});
 					});
 				} catch (e) {
@@ -1271,7 +1271,7 @@ export default class NewScript extends cc.Component {
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
 					callback(null, info || { url: path, uuid: uuid, exists: true });
 				} else {
-					callback(`Scene not found: ${path}`);
+					return callback(`找不到场景: ${path}`);
 				}
 				break;
 
@@ -1288,10 +1288,10 @@ export default class NewScript extends cc.Component {
 		switch (action) {
 			case "create":
 				if (!nodeId) {
-					return callback(`Node ID is required for create operation`);
+					return callback("创建预制体需要节点 ID");
 				}
 				if (Editor.assetdb.exists(prefabPath)) {
-					return callback(`Prefab already exists at ${prefabPath}`);
+					return callback(`预制体已存在: ${prefabPath}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(prefabPath);
@@ -1321,19 +1321,19 @@ export default class NewScript extends cc.Component {
 					Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [nodeId], targetDir);
 				}, 100); // 稍微延迟以确保重命名生效
 
-				callback(null, `Command sent: Creating prefab from node ${nodeId} at ${targetDir} as ${prefabName}`);
+				callback(null, `指令已发送: 从节点 ${nodeId} 在目录 ${targetDir} 创建名为 ${prefabName} 的预制体`);
 				break;
 
 			case "update":
 				if (!nodeId) {
-					return callback(`Node ID is required for update operation`);
+					return callback("更新预制体需要节点 ID");
 				}
 				if (!Editor.assetdb.exists(prefabPath)) {
-					return callback(`Prefab not found at ${prefabPath}`);
+					return callback(`找不到预制体: ${prefabPath}`);
 				}
 				// 更新预制体
 				Editor.Ipc.sendToPanel("scene", "scene:update-prefab", nodeId, prefabPath);
-				callback(null, `Command sent: Updating prefab ${prefabPath} from node ${nodeId}`);
+				callback(null, `指令已发送: 从节点 ${nodeId} 更新预制体 ${prefabPath}`);
 				break;
 
 			case "instantiate":
@@ -1362,7 +1362,7 @@ export default class NewScript extends cc.Component {
 					result.exists = true;
 					callback(null, result);
 				} else {
-					callback(`Prefab not found: ${prefabPath}`);
+					return callback(`找不到预制体: ${prefabPath}`);
 				}
 				break;
 
@@ -1405,10 +1405,10 @@ export default class NewScript extends cc.Component {
 				const refreshPath = (properties && properties.path) ? properties.path : 'db://assets/scripts';
 				Editor.assetdb.refresh(refreshPath, (err) => {
 					if (err) {
-						addLog("error", `Refresh failed: ${err}`);
+						addLog("error", `刷新失败: ${err}`);
 						callback(err);
 					} else {
-						callback(null, `Editor refreshed: ${refreshPath}`);
+						callback(null, `编辑器已刷新: ${refreshPath}`);
 					}
 				});
 				break;
@@ -1425,7 +1425,7 @@ export default class NewScript extends cc.Component {
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(effectPath)) {
-					return callback(`Effect already exists at ${effectPath}`);
+					return callback(`Effect 已存在: ${effectPath}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(effectPath);
@@ -1476,21 +1476,21 @@ CCProgram fs %{
 				Editor.assetdb.create(effectPath, content || defaultEffect, (err) => {
 					if (err) return callback(err);
 					Editor.assetdb.refresh(effectPath, (refreshErr) => {
-						callback(refreshErr, refreshErr ? null : `Effect created at ${effectPath}`);
+						callback(refreshErr, refreshErr ? null : `Effect 已创建: ${effectPath}`);
 					});
 				});
 				break;
 
 			case "read":
 				if (!Editor.assetdb.exists(effectPath)) {
-					return callback(`Effect not found: ${effectPath}`);
+					return callback(`找不到 Effect: ${effectPath}`);
 				}
 				const fspath = Editor.assetdb.urlToFspath(effectPath);
 				try {
 					const data = fs.readFileSync(fspath, "utf-8");
 					callback(null, data);
 				} catch (e) {
-					callback(`Failed to read effect: ${e.message}`);
+					callback(`读取 Effect 失败: ${e.message}`);
 				}
 				break;
 
@@ -1502,19 +1502,19 @@ CCProgram fs %{
 				try {
 					fs.writeFileSync(writeFsPath, content, "utf-8");
 					Editor.assetdb.refresh(effectPath, (err) => {
-						callback(err, err ? null : `Effect updated at ${effectPath}`);
+						callback(err, err ? null : `Effect 已更新: ${effectPath}`);
 					});
 				} catch (e) {
-					callback(`Failed to write effect: ${e.message}`);
+					callback(`更新 Effect 失败: ${e.message}`);
 				}
 				break;
 
 			case "delete":
 				if (!Editor.assetdb.exists(effectPath)) {
-					return callback(`Effect not found: ${effectPath}`);
+					return callback(`找不到 Effect: ${effectPath}`);
 				}
 				Editor.assetdb.delete([effectPath], (err) => {
-					callback(err, err ? null : `Effect deleted: ${effectPath}`);
+					callback(err, err ? null : `Effect 已删除: ${effectPath}`);
 				});
 				break;
 
@@ -1524,7 +1524,7 @@ CCProgram fs %{
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
 					callback(null, info || { url: effectPath, uuid: uuid, exists: true });
 				} else {
-					callback(`Effect not found: ${effectPath}`);
+					callback(`找不到 Effect: ${effectPath}`);
 				}
 				break;
 
@@ -1541,7 +1541,7 @@ CCProgram fs %{
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(matPath)) {
-					return callback(`Material already exists at ${matPath}`);
+					return callback(`材质已存在: ${matPath}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(matPath);
@@ -1569,14 +1569,14 @@ CCProgram fs %{
 				Editor.assetdb.create(matPath, JSON.stringify(materialData, null, 2), (err) => {
 					if (err) return callback(err);
 					Editor.assetdb.refresh(matPath, (refreshErr) => {
-						callback(refreshErr, refreshErr ? null : `Material created at ${matPath}`);
+						callback(refreshErr, refreshErr ? null : `材质已创建: ${matPath}`);
 					});
 				});
 				break;
 
 			case "update":
 				if (!Editor.assetdb.exists(matPath)) {
-					return callback(`Material not found at ${matPath}`);
+					return callback(`找不到材质: ${matPath}`);
 				}
 				const fspath = Editor.assetdb.urlToFspath(matPath);
 				try {
@@ -1605,19 +1605,19 @@ CCProgram fs %{
 
 					fs.writeFileSync(fspath, JSON.stringify(matData, null, 2), "utf-8");
 					Editor.assetdb.refresh(matPath, (err) => {
-						callback(err, err ? null : `Material updated at ${matPath}`);
+						callback(err, err ? null : `材质已更新: ${matPath}`);
 					});
 				} catch (e) {
-					callback(`Failed to update material: ${e.message}`);
+					callback(`更新材质失败: ${e.message}`);
 				}
 				break;
 
 			case "delete":
 				if (!Editor.assetdb.exists(matPath)) {
-					return callback(`Material not found at ${matPath}`);
+					return callback(`找不到材质: ${matPath}`);
 				}
 				Editor.assetdb.delete([matPath], (err) => {
-					callback(err, err ? null : `Material deleted at ${matPath}`);
+					callback(err, err ? null : `材质已删除: ${matPath}`);
 				});
 				break;
 
@@ -1627,7 +1627,7 @@ CCProgram fs %{
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
 					callback(null, info || { url: matPath, uuid: uuid, exists: true });
 				} else {
-					callback(`Material not found: ${matPath}`);
+					callback(`找不到材质: ${matPath}`);
 				}
 				break;
 
@@ -1644,7 +1644,7 @@ CCProgram fs %{
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(path)) {
-					return callback(`Texture already exists at ${path}`);
+					return callback(`纹理已存在: ${path}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(path);
@@ -1671,7 +1671,7 @@ CCProgram fs %{
 						// 4. 如果有 9-slice 设置，更新 Meta
 						if (properties && (properties.border || properties.type)) {
 							const uuid = Editor.assetdb.urlToUuid(path);
-							if (!uuid) return callback(null, `Texture created but UUID not found immediately.`);
+							if (!uuid) return callback(null, `纹理已创建，但未能立即获取 UUID。`);
 
 							// 稍微延迟确保 Meta 已生成
 							setTimeout(() => {
@@ -1700,28 +1700,28 @@ CCProgram fs %{
 
 									if (changed) {
 										Editor.assetdb.saveMeta(uuid, JSON.stringify(meta), (err) => {
-											if (err) Editor.warn(`Failed to save meta for ${path}: ${err}`);
-											callback(null, `Texture created and meta updated at ${path}`);
+											if (err) Editor.warn(`保存资源 Meta 失败 ${path}: ${err}`);
+											callback(null, `纹理已创建并更新 Meta: ${path}`);
 										});
 										return;
 									}
 								}
-								callback(null, `Texture created at ${path}`);
+								callback(null, `纹理已创建: ${path}`);
 							}, 100);
 						} else {
-							callback(null, `Texture created at ${path}`);
+							callback(null, `纹理已创建: ${path}`);
 						}
 					});
 				} catch (e) {
-					callback(`Failed to write texture file: ${e.message}`);
+					callback(`写入纹理文件失败: ${e.message}`);
 				}
 				break;
 			case "delete":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Texture not found at ${path}`);
+					return callback(`找不到纹理: ${path}`);
 				}
 				Editor.assetdb.delete([path], (err) => {
-					callback(err, err ? null : `Texture deleted at ${path}`);
+					callback(err, err ? null : `纹理已删除: ${path}`);
 				});
 				break;
 			case "get_info":
@@ -1730,12 +1730,12 @@ CCProgram fs %{
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
 					callback(null, info || { url: path, uuid: uuid, exists: true });
 				} else {
-					callback(`Texture not found: ${path}`);
+					callback(`找不到纹理: ${path}`);
 				}
 				break;
 			case "update":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Texture not found at ${path}`);
+					return callback(`找不到纹理: ${path}`);
 				}
 				const uuid = Editor.assetdb.urlToUuid(path);
 				let meta = Editor.assetdb.loadMeta(uuid);
@@ -1756,7 +1756,7 @@ CCProgram fs %{
 				}
 
 				if (!meta) {
-					return callback(`Failed to load meta for ${path}`);
+					return callback(`加载资源 Meta 失败: ${path}`);
 				}
 
 				let changed = false;
@@ -1838,7 +1838,7 @@ CCProgram fs %{
 				}
 				break;
 			default:
-				callback(`Unknown texture action: ${action}`);
+				callback(`未知的纹理操作类型: ${action}`);
 				break;
 		}
 	},
@@ -2002,12 +2002,12 @@ CCProgram fs %{
 		// 1. 获取文件系统路径
 		const fspath = Editor.assetdb.urlToFspath(filePath);
 		if (!fspath) {
-			return callback(`File not found or invalid URL: ${filePath}`);
+			return callback(`找不到文件或 URL 无效: ${filePath}`);
 		}
 
 		// 2. 检查文件是否存在
 		if (!fs.existsSync(fspath)) {
-			return callback(`File does not exist: ${fspath}`);
+			return callback(`文件不存在: ${fspath}`);
 		}
 
 		// 3. 读取内容并验证
@@ -2016,7 +2016,7 @@ CCProgram fs %{
 
 			// 检查空文件
 			if (!content || content.trim().length === 0) {
-				return callback(null, { valid: false, message: "Script is empty" });
+				return callback(null, { valid: false, message: "脚本内容为空" });
 			}
 
 			// 对于 JavaScript 脚本，使用 Function 构造器进行语法验证
@@ -2024,7 +2024,7 @@ CCProgram fs %{
 				const wrapper = `(function() { ${content} })`;
 				try {
 					new Function(wrapper);
-					callback(null, { valid: true, message: "JavaScript syntax is valid" });
+					callback(null, { valid: true, message: "JavaScript 语法验证通过" });
 				} catch (syntaxErr) {
 					return callback(null, { valid: false, message: syntaxErr.message });
 				}
@@ -2037,7 +2037,7 @@ CCProgram fs %{
 
 				// 检查是否有 class 定义 (简单的启发式检查)
 				if (!content.includes('class ') && !content.includes('interface ') && !content.includes('enum ') && !content.includes('export ')) {
-					return callback(null, { valid: true, message: "Warning: TypeScript file seems to lack standard definitions (class/interface), but basic syntax check is skipped due to missing compiler." });
+					return callback(null, { valid: true, message: "警告: TypeScript 文件似乎缺少标准定义 (class/interface/export)，但由于缺少编译器，已跳过基础语法检查。" });
 				}
 
 				callback(null, { valid: true, message: "TypeScript 基础检查通过。(完整编译验证需要通过编辑器构建流程)" });
@@ -2079,7 +2079,7 @@ CCProgram fs %{
 
 		// 修改场景中的节点（需要通过 scene-script）
 		"set-node-property"(event, args) {
-			addLog("mcp", `Creating node: ${args.name} (${args.type})`);
+			addLog("mcp", `设置节点属性: ${args.name} (${args.type})`);
 			// 确保第一个参数 'mcp-bridge' 和 package.json 的 name 一致
 			Editor.Scene.callSceneScript("mcp-bridge", "set-property", args, (err, result) => {
 				if (err) {
@@ -2091,10 +2091,10 @@ CCProgram fs %{
 			});
 		},
 		"create-node"(event, args) {
-			addLog("mcp", `Creating node: ${args.name} (${args.type})`);
+			addLog("mcp", `创建节点: ${args.name} (${args.type})`);
 			Editor.Scene.callSceneScript("mcp-bridge", "create-node", args, (err, result) => {
-				if (err) addLog("error", `CreateNode Failed: ${err}`);
-				else addLog("success", `Node Created: ${result}`);
+				if (err) addLog("error", `创建节点失败: ${err}`);
+				else addLog("success", `节点已创建: ${result}`);
 				event.reply(err, result);
 			});
 		},
@@ -2376,9 +2376,14 @@ CCProgram fs %{
 					break;
 				case "begin_group":
 					// scene:undo-record [id]
-					// 这里的 id 好像是可选的，或者用于区分不同的事务
-					Editor.Ipc.sendToPanel("scene", "scene:undo-record", description || "MCP Action");
-					callback(null, `Undo group started: ${description || "MCP Action"}`);
+					// 注意：在 2.4.x 中，undo-record 通常需要一个有效的 uuid
+					// 如果没有提供 uuid，不应将 description 作为 ID 发送，否则会报 Unknown object to record
+					addLog("info", `开始撤销组: ${description || "MCP 动作"}`);
+					// 如果有参数包含 id，则记录该节点
+					if (args.id) {
+						Editor.Ipc.sendToPanel("scene", "scene:undo-record", args.id);
+					}
+					callback(null, `撤销组已启动: ${description || "MCP 动作"}`);
 					break;
 				case "end_group":
 					Editor.Ipc.sendToPanel("scene", "scene:undo-commit");

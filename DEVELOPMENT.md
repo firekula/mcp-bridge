@@ -101,6 +101,14 @@ startServer(port) {
 }
 ```
 
+## 4. 开发历程与里程碑
+
+### 2026-02-10: Undo 系统深度修复与规范化
+- **问题分析**: 修复了 `TypeError: Cannot read property '_name' of null`。该错误是由于直接修改节点属性（绕过 Undo 系统）与分组事务混用导致的。
+- **重构要点**: 将 `update-node-transform` 中所有的直接赋值替换为 `scene:set-property` IPC 调用，确保所有变换修改均受撤销系统监控。
+- **缺陷修正**: 修复了 `manage_undo` 在 `begin_group` 时传递错误参数导致 "Unknown object to record" 的问题。
+- **全量汉化与文档同步**: 完成了 `main.js` 和 `scene-script.js` 的 100% 简体中文翻译。同步更新了 `README.md`、`DEVELOPMENT.md` 及 `注意事项.md`。
+
 ### 3.2 MCP 工具注册
 
 在 `/list-tools` 接口中注册工具：

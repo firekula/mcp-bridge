@@ -317,12 +317,11 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 }
 ```
 
-### 23. manage_undo
-
 - **描述**: 撤销/重做管理
 - **参数**:
     - `action`: 操作类型 (`undo`, `redo`, `begin_group`, `end_group`, `cancel_group`)
     - `description`: 撤销组描述 (用于 `begin_group`)
+    - `id`: 节点 UUID (用于 `begin_group` 时的 `undo-record`，可选)
 
 ### 24. manage_vfx
 

@@ -109,44 +109,42 @@ module.exports = {
         let node = findNode(id);
 
         if (node) {
-            Editor.log(`[scene-script] Node found: ${node.name}, Current Pos: (${node.x}, ${node.y})`);
+            Editor.log(`[scene-script] 找到节点: ${node.name}, 当前坐标: (${node.x}, ${node.y})`);
 
+            // 使用 scene:set-property 实现支持 Undo 的属性修改
+            // 注意：IPC 消息需要发送到 'scene' 面板
             if (x !== undefined) {
-                node.x = Number(x);
-                Editor.log(`[scene-script] Set x to ${node.x}`);
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "x", type: "Number", value: Number(x) });
             }
             if (y !== undefined) {
-                node.y = Number(y);
-                Editor.log(`[scene-script] Set y to ${node.y}`);
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "y", type: "Number", value: Number(y) });
             }
-            // [新增] 支持设置节点宽高 (用于测试 9-slice 等需要调整尺寸的情况)
             if (args.width !== undefined) {
-                node.width = Number(args.width);
-                Editor.log(`[scene-script] Set width to ${node.width}`);
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "width", type: "Number", value: Number(args.width) });
             }
             if (args.height !== undefined) {
-                node.height = Number(args.height);
-                Editor.log(`[scene-script] Set height to ${node.height}`);
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "height", type: "Number", value: Number(args.height) });
             }
-            if (scaleX !== undefined) node.scaleX = Number(scaleX);
-            if (scaleY !== undefined) node.scaleY = Number(scaleY);
+            if (scaleX !== undefined) {
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "scaleX", type: "Number", value: Number(scaleX) });
+            }
+            if (scaleY !== undefined) {
+                Editor.Ipc.sendToPanel("scene", "scene:set-property", { id, path: "scaleY", type: "Number", value: Number(scaleY) });
+            }
             if (color) {
                 const c = new cc.Color().fromHEX(color);
-                // 使用 scene:set-property 实现支持 Undo 的颜色修改
-                // 注意：IPC 消息需要发送到场景面板
                 Editor.Ipc.sendToPanel("scene", "scene:set-property", {
                     id: id,
                     path: "color",
                     type: "Color",
                     value: { r: c.r, g: c.g, b: c.b, a: c.a }
                 });
-                // 既然走了 IPC，就不需要手动 set node.color 了，也不需要重复 dirty
             }
 
             Editor.Ipc.sendToMain("scene:dirty");
             Editor.Ipc.sendToAll("scene:node-changed", { uuid: id });
 
-            Editor.log(`[scene-script] Update complete. New Pos: (${node.x}, ${node.y})`);
+            Editor.log(`[scene-script] 更新完成。新坐标: (${node.x}, ${node.y})`);
             if (event.reply) event.reply(null, "变换信息已更新");
         } else {
             if (event.reply) event.reply(new Error("找不到节点"));
@@ -349,9 +347,9 @@ module.exports = {
                                     loadedCount++;
                                     if (!err && asset) {
                                         loadedAssets[idx] = asset;
-                                        Editor.log(`[scene-script] Successfully loaded asset for ${key}[${idx}]: ${asset.name}`);
+                                        Editor.log(`[scene-script] 成功为 ${key}[${idx}] 加载资源: ${asset.name}`);
                                     } else {
-                                        Editor.warn(`[scene-script] Failed to load asset ${uuid} for ${key}[${idx}]: ${err}`);
+                                        Editor.warn(`[scene-script] 未能为 ${key}[${idx}] 加载资源 ${uuid}: ${err}`);
                                     }
 
                                     if (loadedCount === uuids.length) {
@@ -391,13 +389,13 @@ module.exports = {
                                     if (targetComp) {
                                         finalValue = targetComp;
                                     } else {
-                                        Editor.warn(`[scene-script] Component ${propertyType.name} not found on node ${targetNode.name}`);
+                                        Editor.warn(`[scene-script] 在节点 ${targetNode.name} 上找不到组件 ${propertyType.name}`);
                                     }
                                 }
-                                Editor.log(`[scene-script] Applied Reference for ${key}: ${targetNode.name}`);
+                                Editor.log(`[scene-script] 已应用 ${key} 的引用: ${targetNode.name}`);
                             } else if (value && value.length > 20) {
                                 // 如果明确是组件/节点类型但找不到，才报错
-                                Editor.warn(`[scene-script] Failed to resolve target node/comp for ${key}: ${value}`);
+                                Editor.warn(`[scene-script] 无法解析 ${key} 的目标节点/组件: ${value}`);
                             }
                         } else {
                             // 3. 通用启发式 (找不到类型时的 fallback)
@@ -405,7 +403,7 @@ module.exports = {
                                 const targetNode = findNode(value);
                                 if (targetNode) {
                                     finalValue = targetNode;
-                                    Editor.log(`[scene-script] Heuristic resolved Node for ${key}: ${targetNode.name}`);
+                                    Editor.log(`[scene-script] 启发式解析 ${key} 的节点: ${targetNode.name}`);
                                 } else {
                                     // 找不到节点且是 UUID -> 视为资源
                                     const compIndex = node._components.indexOf(component);
@@ -417,14 +415,14 @@ module.exports = {
                                             value: { uuid: value },
                                             isSubProp: false
                                         });
-                                        Editor.log(`[scene-script] Heuristic resolved Asset via IPC for ${key}: ${value}`);
+                                        Editor.log(`[scene-script] 通过 IPC 启发式解析 ${key} 的资源: ${value}`);
                                     }
                                     return;
                                 }
                             }
                         }
                     } catch (e) {
-                        Editor.warn(`[scene-script] Property resolution failed for ${key}: ${e.message}`);
+                        Editor.warn(`[scene-script] 解析属性 ${key} 失败: ${e.message}`);
                     }
 
                     component[key] = finalValue;
