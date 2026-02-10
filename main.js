@@ -2,7 +2,7 @@
 const { IpcManager } = require("./dist/IpcManager");
 
 const http = require("http");
-const path = require("path");
+const pathModule = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
@@ -329,13 +329,21 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_material",
-			description: `${globalPrecautions} 管理材质`,
+			description: `${globalPrecautions} 管理材质。支持创建、获取信息以及更新 Shader、Defines 和 Uniforms 参数。`,
 			inputSchema: {
 				type: "object",
 				properties: {
-					action: { type: "string", enum: ["create", "delete", "get_info"], description: "操作类型" },
+					action: { type: "string", enum: ["create", "delete", "get_info", "update"], description: "操作类型" },
 					path: { type: "string", description: "材质路径，如 db://assets/materials/NewMaterial.mat" },
-					properties: { type: "object", description: "材质属性" },
+					properties: {
+						type: "object",
+						description: "材质属性 (add/update 操作使用)",
+						properties: {
+							shaderUuid: { type: "string", description: "关联的 Shader (Effect) UUID" },
+							defines: { type: "object", description: "预编译宏定义" },
+							uniforms: { type: "object", description: "Uniform 参数列表" }
+						}
+					},
 				},
 				required: ["action", "path"],
 			},
@@ -349,6 +357,19 @@ const getToolsList = () => {
 					action: { type: "string", enum: ["create", "delete", "get_info"], description: "操作类型" },
 					path: { type: "string", description: "纹理路径，如 db://assets/textures/NewTexture.png" },
 					properties: { type: "object", description: "纹理属性" },
+				},
+				required: ["action", "path"],
+			},
+		},
+		{
+			name: "manage_shader",
+			description: `${globalPrecautions} 管理着色器 (Effect)。支持创建、读取、更新、删除和获取信息。`,
+			inputSchema: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["create", "delete", "read", "write", "get_info"], description: "操作类型" },
+					path: { type: "string", description: "着色器路径，如 db://assets/effects/NewEffect.effect" },
+					content: { type: "string", description: "着色器内容 (create/write)" },
 				},
 				required: ["action", "path"],
 			},
@@ -879,6 +900,10 @@ module.exports = {
 				this.manageTexture(args, callback);
 				break;
 
+			case "manage_shader":
+				this.manageShader(args, callback);
+				break;
+
 			case "execute_menu_item":
 				this.executeMenuItem(args, callback);
 				break;
@@ -1044,7 +1069,7 @@ export default class NewScript extends cc.Component {
 				break;
 
 			default:
-				callback(`Unknown script action: ${action}`);
+				callback(`未知的脚本操作类型: ${action}`);
 				break;
 		}
 	},
@@ -1060,7 +1085,7 @@ export default class NewScript extends cc.Component {
 		let completed = 0;
 
 		if (!operations || operations.length === 0) {
-			return callback("No operations provided");
+			return callback("未提供任何操作指令");
 		}
 
 		operations.forEach((operation, index) => {
@@ -1133,7 +1158,7 @@ export default class NewScript extends cc.Component {
 					if (info) {
 						callback(null, info);
 					} else {
-						// Fallback if API returns nothing but asset exists
+						// 备选方案：如果 API 未返回信息但资源确实存在
 						callback(null, { url: path, uuid: uuid, exists: true });
 					}
 				} catch (e) {
@@ -1142,7 +1167,7 @@ export default class NewScript extends cc.Component {
 				break;
 
 			default:
-				callback(`Unknown asset action: ${action}`);
+				callback(`未知的资源管理操作: ${action}`);
 				break;
 		}
 	},
@@ -1161,8 +1186,6 @@ export default class NewScript extends cc.Component {
 					return callback(`Scene already exists at ${path}`);
 				}
 				// 确保父目录存在
-				const fs = require("fs");
-				const pathModule = require("path");
 				const absolutePath = Editor.assetdb.urlToFspath(path);
 				const dirPath = pathModule.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
@@ -1192,14 +1215,16 @@ export default class NewScript extends cc.Component {
 				if (Editor.assetdb.exists(targetPath)) {
 					return callback(`Target scene already exists at ${targetPath}`);
 				}
-				// 读取原场景内容
-				Editor.assetdb.loadAny(path, (err, content) => {
-					if (err) {
-						return callback(`Failed to read scene: ${err}`);
+				// 【修复】Cocos 2.4.x 主进程中 Editor.assetdb 没有 loadAny
+				// 直接使用 fs 读取物理文件
+				try {
+					const sourceFsPath = Editor.assetdb.urlToFspath(path);
+					if (!sourceFsPath || !fs.existsSync(sourceFsPath)) {
+						return callback(`Failed to locate source scene file: ${path}`);
 					}
+					const content = fs.readFileSync(sourceFsPath, "utf-8");
+
 					// 确保目标目录存在
-					const fs = require("fs");
-					const pathModule = require("path");
 					const targetAbsolutePath = Editor.assetdb.urlToFspath(targetPath);
 					const targetDirPath = pathModule.dirname(targetAbsolutePath);
 					if (!fs.existsSync(targetDirPath)) {
@@ -1207,9 +1232,15 @@ export default class NewScript extends cc.Component {
 					}
 					// 创建复制的场景
 					Editor.assetdb.create(targetPath, content, (err) => {
-						callback(err, err ? null : `Scene duplicated from ${path} to ${targetPath}`);
+						if (err) return callback(err);
+						// 【增加】关键刷新，确保数据库能查到新文件
+						Editor.assetdb.refresh(targetPath, (refreshErr) => {
+							callback(refreshErr, refreshErr ? null : `Scene duplicated from ${path} to ${targetPath}`);
+						});
 					});
-				});
+				} catch (e) {
+					callback(`Duplicate failed: ${e.message}`);
+				}
 				break;
 
 			case "get_info":
@@ -1242,7 +1273,7 @@ export default class NewScript extends cc.Component {
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(prefabPath);
-				const dirPath = path.dirname(absolutePath);
+				const dirPath = pathModule.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
@@ -1314,7 +1345,7 @@ export default class NewScript extends cc.Component {
 				break;
 
 			default:
-				callback(`Unknown prefab action: ${action}`);
+				callback(`未知的预制体管理操作: ${action}`);
 		}
 	},
 
@@ -1338,10 +1369,12 @@ export default class NewScript extends cc.Component {
 				break;
 			case "set_selection":
 				// 设置选中状态
-				if (target === "node" && properties.nodes) {
-					Editor.Selection.select("node", properties.nodes);
-				} else if (target === "asset" && properties.assets) {
-					Editor.Selection.select("asset", properties.assets);
+				if (target === "node") {
+					const ids = properties.ids || properties.nodes;
+					if (ids) Editor.Selection.select("node", ids);
+				} else if (target === "asset") {
+					const ids = properties.ids || properties.assets;
+					if (ids) Editor.Selection.select("asset", ids);
 				}
 				callback(null, "Selection updated");
 				break;
@@ -1358,63 +1391,224 @@ export default class NewScript extends cc.Component {
 				});
 				break;
 			default:
-				callback("Unknown action");
+				callback("未知的编辑器管理操作");
+				break;
+		}
+	},
+
+	// 管理着色器 (Effect)
+	manageShader(args, callback) {
+		const { action, path: effectPath, content } = args;
+
+		switch (action) {
+			case "create":
+				if (Editor.assetdb.exists(effectPath)) {
+					return callback(`Effect already exists at ${effectPath}`);
+				}
+				// 确保父目录存在
+				const absolutePath = Editor.assetdb.urlToFspath(effectPath);
+				const dirPath = pathModule.dirname(absolutePath);
+				if (!fs.existsSync(dirPath)) {
+					fs.mkdirSync(dirPath, { recursive: true });
+				}
+
+				const defaultEffect = `CCEffect %{
+  techniques:
+  - passes:
+    - vert: vs
+      frag: fs
+      blendState:
+        targets:
+        - blend: true
+      rasterizerState:
+        cullMode: none
+      properties:
+        texture: { value: white }
+        mainColor: { value: [1, 1, 1, 1], editor: { type: color } }
+}%
+
+CCProgram vs %{
+  precision highp float;
+  #include <cc-global>
+  attribute vec3 a_position;
+  attribute vec2 a_uv0;
+  varying vec2 v_uv0;
+  void main () {
+    gl_Position = cc_matViewProj * vec4(a_position, 1.0);
+    v_uv0 = a_uv0;
+  }
+}%
+
+CCProgram fs %{
+  precision highp float;
+  uniform sampler2D texture;
+  uniform Constant {
+    vec4 mainColor;
+  };
+  varying vec2 v_uv0;
+  void main () {
+    gl_FragColor = mainColor * texture2D(texture, v_uv0);
+  }
+}%`;
+
+				Editor.assetdb.create(effectPath, content || defaultEffect, (err) => {
+					if (err) return callback(err);
+					Editor.assetdb.refresh(effectPath, (refreshErr) => {
+						callback(refreshErr, refreshErr ? null : `Effect created at ${effectPath}`);
+					});
+				});
+				break;
+
+			case "read":
+				if (!Editor.assetdb.exists(effectPath)) {
+					return callback(`Effect not found: ${effectPath}`);
+				}
+				const fspath = Editor.assetdb.urlToFspath(effectPath);
+				try {
+					const data = fs.readFileSync(fspath, "utf-8");
+					callback(null, data);
+				} catch (e) {
+					callback(`Failed to read effect: ${e.message}`);
+				}
+				break;
+
+			case "write":
+				if (!Editor.assetdb.exists(effectPath)) {
+					return callback(`Effect not found: ${effectPath}`);
+				}
+				const writeFsPath = Editor.assetdb.urlToFspath(effectPath);
+				try {
+					fs.writeFileSync(writeFsPath, content, "utf-8");
+					Editor.assetdb.refresh(effectPath, (err) => {
+						callback(err, err ? null : `Effect updated at ${effectPath}`);
+					});
+				} catch (e) {
+					callback(`Failed to write effect: ${e.message}`);
+				}
+				break;
+
+			case "delete":
+				if (!Editor.assetdb.exists(effectPath)) {
+					return callback(`Effect not found: ${effectPath}`);
+				}
+				Editor.assetdb.delete([effectPath], (err) => {
+					callback(err, err ? null : `Effect deleted: ${effectPath}`);
+				});
+				break;
+
+			case "get_info":
+				if (Editor.assetdb.exists(effectPath)) {
+					const uuid = Editor.assetdb.urlToUuid(effectPath);
+					const info = Editor.assetdb.assetInfoByUuid(uuid);
+					callback(null, info || { url: effectPath, uuid: uuid, exists: true });
+				} else {
+					callback(`Effect not found: ${effectPath}`);
+				}
+				break;
+
+			default:
+				callback(`Unknown shader action: ${action}`);
 				break;
 		}
 	},
 
 	// 管理材质
 	manageMaterial(args, callback) {
-		const { action, path, properties } = args;
+		const { action, path: matPath, properties = {} } = args;
 
 		switch (action) {
 			case "create":
-				if (Editor.assetdb.exists(path)) {
-					return callback(`Material already exists at ${path}`);
+				if (Editor.assetdb.exists(matPath)) {
+					return callback(`Material already exists at ${matPath}`);
 				}
 				// 确保父目录存在
-				const fs = require("fs");
-				const pathModule = require("path");
-				const absolutePath = Editor.assetdb.urlToFspath(path);
+				const absolutePath = Editor.assetdb.urlToFspath(matPath);
 				const dirPath = pathModule.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
-				// 创建材质资源
-				const materialContent = JSON.stringify({
+
+				// 构造 Cocos 2.4.x 材质内容
+				const materialData = {
 					__type__: "cc.Material",
 					_name: "",
 					_objFlags: 0,
 					_native: "",
-					effects: [
-						{
-							technique: 0,
-							defines: {},
-							uniforms: properties.uniforms || {},
-						},
-					],
-				});
-				Editor.assetdb.create(path, materialContent, (err) => {
-					callback(err, err ? null : `Material created at ${path}`);
+					_effectAsset: properties.shaderUuid ? { __uuid__: properties.shaderUuid } : null,
+					_techniqueIndex: 0,
+					_techniqueData: {
+						"0": {
+							defines: properties.defines || {},
+							props: properties.uniforms || {}
+						}
+					}
+				};
+
+				Editor.assetdb.create(matPath, JSON.stringify(materialData, null, 2), (err) => {
+					if (err) return callback(err);
+					Editor.assetdb.refresh(matPath, (refreshErr) => {
+						callback(refreshErr, refreshErr ? null : `Material created at ${matPath}`);
+					});
 				});
 				break;
+
+			case "update":
+				if (!Editor.assetdb.exists(matPath)) {
+					return callback(`Material not found at ${matPath}`);
+				}
+				const fspath = Editor.assetdb.urlToFspath(matPath);
+				try {
+					const content = fs.readFileSync(fspath, "utf-8");
+					const matData = JSON.parse(content);
+
+					// 确保结构存在
+					if (!matData._techniqueData) matData._techniqueData = {};
+					if (!matData._techniqueData["0"]) matData._techniqueData["0"] = {};
+					const tech = matData._techniqueData["0"];
+
+					// 更新 Shader
+					if (properties.shaderUuid) {
+						matData._effectAsset = { __uuid__: properties.shaderUuid };
+					}
+
+					// 更新 Defines
+					if (properties.defines) {
+						tech.defines = Object.assign(tech.defines || {}, properties.defines);
+					}
+
+					// 更新 Props/Uniforms
+					if (properties.uniforms) {
+						tech.props = Object.assign(tech.props || {}, properties.uniforms);
+					}
+
+					fs.writeFileSync(fspath, JSON.stringify(matData, null, 2), "utf-8");
+					Editor.assetdb.refresh(matPath, (err) => {
+						callback(err, err ? null : `Material updated at ${matPath}`);
+					});
+				} catch (e) {
+					callback(`Failed to update material: ${e.message}`);
+				}
+				break;
+
 			case "delete":
-				if (!Editor.assetdb.exists(path)) {
-					return callback(`Material not found at ${path}`);
+				if (!Editor.assetdb.exists(matPath)) {
+					return callback(`Material not found at ${matPath}`);
 				}
-				Editor.assetdb.delete([path], (err) => {
-					callback(err, err ? null : `Material deleted at ${path}`);
+				Editor.assetdb.delete([matPath], (err) => {
+					callback(err, err ? null : `Material deleted at ${matPath}`);
 				});
 				break;
+
 			case "get_info":
-				if (Editor.assetdb.exists(path)) {
-					const uuid = Editor.assetdb.urlToUuid(path);
+				if (Editor.assetdb.exists(matPath)) {
+					const uuid = Editor.assetdb.urlToUuid(matPath);
 					const info = Editor.assetdb.assetInfoByUuid(uuid);
-					callback(null, info || { url: path, uuid: uuid, exists: true });
+					callback(null, info || { url: matPath, uuid: uuid, exists: true });
 				} else {
-					callback(`Material not found: ${path}`);
+					callback(`Material not found: ${matPath}`);
 				}
 				break;
+
 			default:
 				callback(`Unknown material action: ${action}`);
 				break;
@@ -1431,25 +1625,25 @@ export default class NewScript extends cc.Component {
 					return callback(`Texture already exists at ${path}`);
 				}
 				// 确保父目录存在
-				const fs = require("fs");
-				const pathModule = require("path");
 				const absolutePath = Editor.assetdb.urlToFspath(path);
 				const dirPath = pathModule.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
 				}
-				// 创建纹理资源（简化版，实际需要处理纹理文件）
-				const textureContent = JSON.stringify({
-					__type__: "cc.Texture2D",
-					_name: "",
-					_objFlags: 0,
-					_native: properties.native || "",
-					width: properties.width || 128,
-					height: properties.height || 128,
-				});
-				Editor.assetdb.create(path, textureContent, (err) => {
-					callback(err, err ? null : `Texture created at ${path}`);
-				});
+				// 【修复】Cocos 2.4.x 无法直接用 Editor.assetdb.create 创建带后缀的纹理（会校验内容）
+				// 我们需要先物理写入一个 1x1 的透明图片，再刷新数据库
+				const base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+				const buffer = Buffer.from(base64Data, 'base64');
+
+				try {
+					fs.writeFileSync(absolutePath, buffer);
+					Editor.assetdb.refresh(path, (err) => {
+						if (err) return callback(err);
+						callback(null, `Texture created and refreshed at ${path}`);
+					});
+				} catch (e) {
+					callback(`Failed to write texture file: ${e.message}`);
+				}
 				break;
 			case "delete":
 				if (!Editor.assetdb.exists(path)) {
@@ -1637,7 +1831,6 @@ export default class NewScript extends cc.Component {
 		}
 
 		// 2. 检查文件是否存在
-		const fs = require("fs");
 		if (!fs.existsSync(fspath)) {
 			return callback(`File does not exist: ${fspath}`);
 		}
@@ -1870,8 +2063,6 @@ export default class NewScript extends cc.Component {
 	// 全局文件搜索
 	findInFile(args, callback) {
 		const { query, extensions, includeSubpackages } = args;
-		const fs = require('fs');
-		const path = require('path');
 
 		const assetsPath = Editor.assetdb.urlToFspath("db://assets");
 		const validExtensions = extensions || [".js", ".ts", ".json", ".fire", ".prefab", ".xml", ".txt", ".md"];
@@ -1890,14 +2081,14 @@ export default class NewScript extends cc.Component {
 					// 忽略隐藏文件和 node_modules
 					if (file.startsWith('.') || file === 'node_modules' || file === 'bin' || file === 'local') return;
 
-					const filePath = path.join(dir, file);
+					const filePath = pathModule.join(dir, file);
 					const stat = fs.statSync(filePath);
 
 					if (stat && stat.isDirectory()) {
 						walk(filePath);
 					} else {
 						// 检查后缀
-						const ext = path.extname(file).toLowerCase();
+						const ext = pathModule.extname(file).toLowerCase();
 						if (validExtensions.includes(ext)) {
 							try {
 								const content = fs.readFileSync(filePath, 'utf8');
@@ -1907,9 +2098,9 @@ export default class NewScript extends cc.Component {
 									if (results.length >= MAX_RESULTS) return;
 									if (line.includes(query)) {
 										// 转换为项目相对路径 (db://assets/...)
-										const relativePath = path.relative(assetsPath, filePath);
+										const relativePath = pathModule.relative(assetsPath, filePath);
 										// 统一使用 forward slash
-										const dbPath = "db://assets/" + relativePath.split(path.sep).join('/');
+										const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
 
 										results.push({
 											filePath: dbPath,

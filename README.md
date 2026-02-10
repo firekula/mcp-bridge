@@ -153,7 +153,8 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `properties`: 组件属性（用于 `add`/`update` 操作）。
 - **智能特性**：
     1. 如果属性期望组件类型但传入节点 UUID，插件会自动查找匹配组件。
-    2. 对于资源类属性（如 `cc.Prefab`, `sp.SkeletonData`），传递资源的 UUID，插件会自动处理异步加载与序列化，确保不出现 Type Error。
+    2. 对于资源类属性（如 `cc.Prefab`, `cc.Material`），传递资源的 UUID，插件会自动处理异步加载与序列化。
+    3. **资产数组支持**: 针对 `materials` 等数组属性，支持传入 UUID 数组，插件将自动并发加载所有资源并同步更新编辑器 UI。
 - **操作规则 (Subject Validation Rule)**：赋值或更新前必须确保目标属性在组件上真实存在。
 
 ### 9. manage_script
@@ -224,14 +225,24 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 16. manage_material
 
-- **描述**: 管理材质
+- **描述**: 管理材质资源。支持适配 Cocos Creator 2.4.x 的 `_effectAsset` 和 `_techniqueData` 结构。
 - **参数**:
-    - `action`: 操作类型（`create`, `delete`, `get_info`）
+    - `action`: 操作类型（`create`, `delete`, `update`, `get_info`）
     - `path`: 材质路径，如 `db://assets/materials/NewMaterial.mat`
-    - `properties`: 材质属性（用于 `create` 操作）
-        - `uniforms`: 材质 uniforms
+    - `properties`: 材质属性（用于 `create` 和 `update` 操作）
+        - `shaderUuid`: 指定使用的着色器 UUID
+        - `defines`: 宏定义对象（用于 `update` 时会与现有值合并）
+        - `uniforms`: Uniform 参数对象（用于 `update` 时会与现有值合并，对应引擎内的 `props`）
 
-### 17. manage_texture
+### 17. manage_shader
+
+- **描述**: 管理着色器 (Effect) 资源。
+- **参数**:
+    - `action`: 操作类型（`create`, `read`, `write`, `delete`, `get_info`）
+    - `path`: 着色器路径，如 `db://assets/effects/MyShader.effect`
+    - `content`: 文本内容（用于 `create` 和 `write` 操作）
+
+### 18. manage_texture
 
 - **描述**: 管理纹理
 - **参数**:

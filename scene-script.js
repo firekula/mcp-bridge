@@ -307,9 +307,10 @@ module.exports = {
                         }
 
                         let isAsset = propertyType && (propertyType.prototype instanceof cc.Asset || propertyType === cc.Asset || propertyType === cc.Prefab || propertyType === cc.SpriteFrame);
+                        let isAssetArray = Array.isArray(value) && (key === 'materials' || key.toLowerCase().includes('assets'));
 
                         // 启发式：如果属性名包含 prefab/sprite/texture 等，且值为 UUID 且不是节点
-                        if (!isAsset && typeof value === 'string' && value.length > 20) {
+                        if (!isAsset && !isAssetArray && typeof value === 'string' && value.length > 20) {
                             const lowerKey = key.toLowerCase();
                             const assetKeywords = ['prefab', 'sprite', 'texture', 'material', 'skeleton', 'spine', 'atlas', 'font', 'audio', 'data'];
                             if (assetKeywords.some(k => lowerKey.includes(k))) {
@@ -319,32 +320,55 @@ module.exports = {
                             }
                         }
 
-                        if (isAsset) {
-                            // 1. 处理资源引用 (cc.Prefab, cc.SpriteFrame 等)
-                            if (typeof value === 'string' && value.length > 20) {
-                                // 在场景进程中异步加载资源，这能确保 serialization 时是正确的老格式对象
-                                cc.AssetLibrary.loadAsset(value, (err, asset) => {
+                        if (isAsset || isAssetArray) {
+                            // 1. 处理资源引用 (单个或数组)
+                            const uuids = isAssetArray ? value : [value];
+                            const loadedAssets = [];
+                            let loadedCount = 0;
+
+                            if (uuids.length === 0) {
+                                component[key] = [];
+                                return;
+                            }
+
+                            uuids.forEach((uuid, idx) => {
+                                if (typeof uuid !== 'string' || uuid.length < 10) {
+                                    loadedCount++;
+                                    return;
+                                }
+                                cc.AssetLibrary.loadAsset(uuid, (err, asset) => {
+                                    loadedCount++;
                                     if (!err && asset) {
-                                        component[key] = asset;
-                                        Editor.log(`[scene-script] Successfully loaded and assigned asset for ${key}: ${asset.name}`);
+                                        loadedAssets[idx] = asset;
+                                        Editor.log(`[scene-script] Successfully loaded asset for ${key}[${idx}]: ${asset.name}`);
+                                    } else {
+                                        Editor.warn(`[scene-script] Failed to load asset ${uuid} for ${key}[${idx}]: ${err}`);
+                                    }
+
+                                    if (loadedCount === uuids.length) {
+                                        if (isAssetArray) {
+                                            // 过滤掉加载失败的
+                                            component[key] = loadedAssets.filter(a => !!a);
+                                        } else {
+                                            if (loadedAssets[0]) component[key] = loadedAssets[0];
+                                        }
+
                                         // 通知编辑器 UI 更新
                                         const compIndex = node._components.indexOf(component);
                                         if (compIndex !== -1) {
                                             Editor.Ipc.sendToPanel('scene', 'scene:set-property', {
                                                 id: node.uuid,
                                                 path: `_components.${compIndex}.${key}`,
-                                                type: 'Object',
-                                                value: { uuid: value },
+                                                type: isAssetArray ? 'Array' : 'Object',
+                                                value: isAssetArray ? uuids.map(u => ({ uuid: u })) : { uuid: value },
                                                 isSubProp: false
                                             });
                                         }
                                         Editor.Ipc.sendToMain("scene:dirty");
-                                    } else {
-                                        Editor.warn(`[scene-script] Failed to load asset ${value} for ${key}: ${err}`);
                                     }
                                 });
-                                return; // 跳过后续的直接赋值
-                            }
+                            });
+                            return; // 跳过后续的直接赋值
                         } else if (propertyType && (propertyType.prototype instanceof cc.Component || propertyType === cc.Component || propertyType === cc.Node)) {
                             // 2. 处理节点或组件引用
                             const targetNode = findNode(value);
@@ -850,7 +874,7 @@ module.exports = {
                 }, 10);
                 if (event.reply) event.reply(null, newNode.uuid);
             } else {
-                if (event.reply) event.reply(new Error("Parent node not found"));
+                if (event.reply) event.reply(new Error("找不到父节点"));
             }
 
         } else if (action === "update") {
@@ -895,7 +919,7 @@ module.exports = {
                     if (event.reply) event.reply(null, { hasParticleSystem: false });
                 }
             } else {
-                if (event.reply) event.reply(new Error("Node not found"));
+                if (event.reply) event.reply(new Error("找不到节点"));
             }
         } else {
             if (event.reply) event.reply(new Error(`未知的特效操作类型: ${action}`));
@@ -912,13 +936,13 @@ module.exports = {
         const node = findNode(nodeId);
 
         if (!node) {
-            if (event.reply) event.reply(new Error(`Node not found: ${nodeId}`));
+            if (event.reply) event.reply(new Error(`找不到节点: ${nodeId}`));
             return;
         }
 
         const anim = node.getComponent(cc.Animation);
         if (!anim) {
-            if (event.reply) event.reply(new Error(`Animation component not found on node: ${nodeId}`));
+            if (event.reply) event.reply(new Error(`在节点 ${nodeId} 上找不到 Animation 组件`));
             return;
         }
 
@@ -957,30 +981,30 @@ module.exports = {
             case "play":
                 if (!clipName) {
                     anim.play();
-                    if (event.reply) event.reply(null, "Playing default clip");
+                    if (event.reply) event.reply(null, "正在播放默认动画剪辑");
                 } else {
                     anim.play(clipName);
-                    if (event.reply) event.reply(null, `Playing clip: ${clipName}`);
+                    if (event.reply) event.reply(null, `正在播放动画剪辑: ${clipName}`);
                 }
                 break;
 
             case "stop":
                 anim.stop();
-                if (event.reply) event.reply(null, "Animation stopped");
+                if (event.reply) event.reply(null, "动画已停止");
                 break;
 
             case "pause":
                 anim.pause();
-                if (event.reply) event.reply(null, "Animation paused");
+                if (event.reply) event.reply(null, "动画已暂停");
                 break;
 
             case "resume":
                 anim.resume();
-                if (event.reply) event.reply(null, "Animation resumed");
+                if (event.reply) event.reply(null, "动画已恢复播放");
                 break;
 
             default:
-                if (event.reply) event.reply(new Error(`Unknown animation action: ${action}`));
+                if (event.reply) event.reply(new Error(`未知的动画操作类型: ${action}`));
                 break;
         }
     },
