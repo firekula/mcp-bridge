@@ -485,7 +485,7 @@ manageAsset(args, callback) {
 | 材质管理 | manage_material | ✅ 已实现 | |
 | 纹理管理 | manage_texture | ✅ 已实现 | |
 | 代码编辑 | apply_text_edits | ✅ 已实现 | |
-| 全局搜索 | find_in_file | ✅ 已实现 | |
+| 全局搜索 | search_project | ✅ 已实现 | 升级版，支持正则和路径限定 |
 | 控制台 | read_console | ✅ 已实现 | |
 | 菜单执行 | execute_menu_item | ✅ 已实现 | 移除不稳定映射，推荐 delete-node:UUID |
 | 脚本验证 | validate_script | ✅ 已实现 | |

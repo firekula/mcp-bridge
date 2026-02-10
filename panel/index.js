@@ -92,7 +92,7 @@ Editor.Panel.extend({
 		});
 		root.querySelector("#btnCopy").addEventListener("confirm", () => {
 			require("electron").clipboard.writeText(els.logView.innerText);
-			Editor.success("Logs Copied");
+			Editor.success("日志已复制");
 		});
 		els.autoStart.addEventListener("change", (e) => {
 			Editor.Ipc.sendToMain("mcp-bridge:set-auto-start", e.target.value);
@@ -110,7 +110,7 @@ Editor.Panel.extend({
 		if (probeBtn) {
 			probeBtn.addEventListener("confirm", () => {
 				Editor.Ipc.sendToMain("mcp-bridge:inspect-apis");
-				els.result.value = "Probe command sent. Check console logs.";
+				els.result.value = "探查指令已发送。请查看编辑器控制台日志。";
 			});
 		}
 
@@ -156,7 +156,7 @@ Editor.Panel.extend({
 				});
 				// 保存工具映射表，以便后续检索
 				this.toolsMap = toolsMap;
-				els.result.value = `Loaded ${data.tools.length} tools.`;
+				els.result.value = `成功加载 ${data.tools.length} 个工具。`;
 			})
 			.catch((e) => {
 				els.result.value = "Error: " + e.message;
@@ -193,7 +193,7 @@ Editor.Panel.extend({
 	runTest(els) {
 		const url = `http://localhost:${els.port.value}/call-tool`;
 		const body = { name: els.toolName.value, arguments: JSON.parse(els.toolParams.value || "{}") };
-		els.result.value = "Testing...";
+		els.result.value = "正在测试...";
 		fetch(url, { method: "POST", body: JSON.stringify(body) })
 			.then((r) => r.json())
 			.then((d) => {
@@ -247,7 +247,7 @@ Editor.Panel.extend({
 	updateUI(active) {
 		const btn = this.shadowRoot.querySelector("#btnToggle");
 		if (!btn) return;
-		btn.innerText = active ? "Stop" : "Start";
+		btn.innerText = active ? "停止" : "启动";
 		btn.style.backgroundColor = active ? "#aa4444" : "#44aa44";
 	},
 });

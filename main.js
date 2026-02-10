@@ -419,7 +419,7 @@ const getToolsList = () => {
 				type: "object",
 				properties: {
 					limit: { type: "number", description: "输出限制" },
-					type: { type: "string", enum: ["log", "error", "warn"], description: "输出类型" },
+					type: { type: "string", enum: ["info", "warn", "error", "success", "mcp"], description: "输出类型 (info, warn, error, success, mcp)" },
 				},
 			},
 		},
@@ -435,19 +435,26 @@ const getToolsList = () => {
 			},
 		},
 		{
-			name: "find_in_file",
-			description: `${globalPrecautions} 在项目中全局搜索文本内容`,
+			name: "search_project",
+			description: `${globalPrecautions} 搜索项目文件。支持三种模式：1. 'content' (默认): 搜索文件内容，支持正则表达式；2. 'file_name': 在指定目录下搜索匹配的文件名；3. 'dir_name': 在指定目录下搜索匹配的文件夹名。`,
 			inputSchema: {
 				type: "object",
 				properties: {
-					query: { type: "string", description: "搜索关键词" },
+					query: { type: "string", description: "搜索关键词或正则表达式模式" },
+					useRegex: { type: "boolean", description: "是否将 query 视为正则表达式 (仅在 matchType 为 'content', 'file_name' 或 'dir_name' 时生效)" },
+					path: { type: "string", description: "搜索起点路径，例如 'db://assets/scripts'。默认为 'db://assets'" },
+					matchType: {
+						type: "string",
+						enum: ["content", "file_name", "dir_name"],
+						description: "匹配模式：'content' (内容关键词/正则), 'file_name' (搜索文件名), 'dir_name' (搜索文件夹名)"
+					},
 					extensions: {
 						type: "array",
 						items: { type: "string" },
-						description: "文件后缀列表 (例如 ['.js', '.ts'])",
+						description: "限定文件后缀 (如 ['.js', '.ts'])。仅在 matchType 为 'content' 或 'file_name' 时有效。",
 						default: [".js", ".ts", ".json", ".fire", ".prefab", ".xml", ".txt", ".md"]
 					},
-					includeSubpackages: { type: "boolean", default: true, description: "是否搜索子包 (暂时默认搜索 assets 目录)" }
+					includeSubpackages: { type: "boolean", default: true, description: "是否递归搜索子目录" }
 				},
 				required: ["query"]
 			}
@@ -935,8 +942,8 @@ module.exports = {
 				this.validateScript(args, callback);
 				break;
 
-			case "find_in_file":
-				this.findInFile(args, callback);
+			case "search_project":
+				this.searchProject(args, callback);
 				break;
 
 			case "manage_undo":
@@ -996,7 +1003,7 @@ module.exports = {
 		switch (action) {
 			case "create":
 				if (Editor.assetdb.exists(scriptPath)) {
-					return callback(`Script already exists at ${scriptPath}`);
+					return callback(`脚本已存在: ${scriptPath}`);
 				}
 				// 确保父目录存在
 				const absolutePath = Editor.assetdb.urlToFspath(scriptPath);
@@ -1044,10 +1051,10 @@ export default class NewScript extends cc.Component {
 
 			case "delete":
 				if (!Editor.assetdb.exists(scriptPath)) {
-					return callback(`Script not found at ${scriptPath}`);
+					return callback(`找不到脚本: ${scriptPath}`);
 				}
 				Editor.assetdb.delete([scriptPath], (err) => {
-					callback(err, err ? null : `Script deleted at ${scriptPath}`);
+					callback(err, err ? null : `脚本已删除: ${scriptPath}`);
 				});
 				break;
 
@@ -1055,13 +1062,13 @@ export default class NewScript extends cc.Component {
 				// 使用 fs 读取，绕过 assetdb.loadAny
 				const readFsPath = Editor.assetdb.urlToFspath(scriptPath);
 				if (!readFsPath || !fs.existsSync(readFsPath)) {
-					return callback(`Script not found at ${scriptPath}`);
+					return callback(`找不到脚本: ${scriptPath}`);
 				}
 				try {
 					const content = fs.readFileSync(readFsPath, "utf-8");
 					callback(null, content);
 				} catch (e) {
-					callback(`Failed to read script: ${e.message}`);
+					callback(`读取脚本失败: ${e.message}`);
 				}
 				break;
 
@@ -1075,11 +1082,11 @@ export default class NewScript extends cc.Component {
 				try {
 					fs.writeFileSync(writeFsPath, content, "utf-8");
 					Editor.assetdb.refresh(scriptPath, (err) => {
-						if (err) addLog("warn", `Refresh failed after write: ${err}`);
-						callback(null, `Script updated at ${scriptPath}`);
+						if (err) addLog("warn", `写入脚本后刷新失败: ${err}`);
+						callback(null, `脚本已更新: ${scriptPath}`);
 					});
 				} catch (e) {
-					callback(`Failed to write script: ${e.message}`);
+					callback(`写入脚本失败: ${e.message}`);
 				}
 				break;
 
@@ -1152,13 +1159,13 @@ export default class NewScript extends cc.Component {
 
 			case "move":
 				if (!Editor.assetdb.exists(path)) {
-					return callback(`Asset not found at ${path}`);
+					return callback(`找不到资源: ${path}`);
 				}
 				if (Editor.assetdb.exists(targetPath)) {
-					return callback(`Target asset already exists at ${targetPath}`);
+					return callback(`目标资源已存在: ${targetPath}`);
 				}
 				Editor.assetdb.move(path, targetPath, (err) => {
-					callback(err, err ? null : `Asset moved from ${path} to ${targetPath}`);
+					callback(err, err ? null : `资源已从 ${path} 移动到 ${targetPath}`);
 				});
 				break;
 
@@ -1391,7 +1398,7 @@ export default class NewScript extends cc.Component {
 					const ids = properties.ids || properties.assets;
 					if (ids) Editor.Selection.select("asset", ids);
 				}
-				callback(null, "Selection updated");
+				callback(null, "选中状态已更新");
 				break;
 			case "refresh_editor":
 				// 刷新编辑器
@@ -1823,11 +1830,11 @@ CCProgram fs %{
 					// 使用 saveMeta 或者 fs 写入
 					// 为了安全，如果 loadMeta 失败了，safeMeta 可能也会失败，所以这里尽量用 API，不行再 fallback (暂且只用 API)
 					Editor.assetdb.saveMeta(uuid, JSON.stringify(meta), (err) => {
-						if (err) return callback(`Failed to save meta: ${err}`);
-						callback(null, `Texture updated at ${path}`);
+						if (err) return callback(`保存 Meta 失败: ${err}`);
+						callback(null, `纹理已更新: ${path}`);
 					});
 				} else {
-					callback(null, `No changes needed for ${path}`);
+					callback(null, `资源不需要更新: ${path}`);
 				}
 				break;
 			default:
@@ -1848,12 +1855,12 @@ CCProgram fs %{
 		// 1. 获取文件系统路径
 		const fspath = Editor.assetdb.urlToFspath(filePath);
 		if (!fspath) {
-			return callback(`File not found or invalid URL: ${filePath}`);
+			return callback(`找不到文件或 URL 无效: ${filePath}`);
 		}
 
 		const fs = require("fs");
 		if (!fs.existsSync(fspath)) {
-			return callback(`File does not exist: ${fspath}`);
+			return callback(`文件不存在: ${fspath}`);
 		}
 
 		try {
@@ -1893,12 +1900,12 @@ CCProgram fs %{
 
 			// 5. 通知编辑器资源变化 (重要)
 			Editor.assetdb.refresh(filePath, (err) => {
-				if (err) addLog("warn", `Refresh failed for ${filePath}: ${err}`);
-				callback(null, `Text edits applied to ${filePath}`);
+				if (err) addLog("warn", `刷新失败 ${filePath}: ${err}`);
+				callback(null, `文本编辑已应用: ${filePath}`);
 			});
 
 		} catch (err) {
-			callback(`Action failed: ${err.message}`);
+			callback(`操作失败: ${err.message}`);
 		}
 	},
 
@@ -1908,7 +1915,9 @@ CCProgram fs %{
 		let filteredOutput = logBuffer;
 
 		if (type) {
-			filteredOutput = filteredOutput.filter((item) => item.type === type);
+			// [优化] 支持别名映射
+			const targetType = type === "log" ? "info" : type;
+			filteredOutput = filteredOutput.filter((item) => item.type === targetType);
 		}
 
 		if (limit) {
@@ -1921,9 +1930,9 @@ CCProgram fs %{
 	executeMenuItem(args, callback) {
 		const { menuPath } = args;
 		if (!menuPath) {
-			return callback("Menu path is required");
+			return callback("菜单路径是必填项");
 		}
-		addLog("info", `Executing Menu Item: ${menuPath}`);
+		addLog("info", `执行菜单项: ${menuPath}`);
 
 		// 菜单项映射表 (Cocos Creator 2.4.x IPC)
 		// 参考: IPC_MESSAGES.md
@@ -1936,8 +1945,6 @@ CCProgram fs %{
 			'Edit/Delete': 'scene:delete-nodes',
 			'Delete': 'scene:delete-nodes',
 			'delete': 'scene:delete-nodes',
-			'Node/Create Empty Node': 'scene:create-node-by-classid', // 简化的映射，通常需要参数
-			'Project/Build': 'app:build-project',
 		};
 
 		// 特殊处理 delete-node:UUID 格式
@@ -1960,30 +1967,30 @@ CCProgram fs %{
 					const selection = Editor.Selection.curSelection("node");
 					if (selection.length > 0) {
 						Editor.Ipc.sendToMain(ipcMsg, selection);
-						callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg} with ${selection.length} nodes`);
+						callback(null, `菜单动作已触发: ${menuPath} -> ${ipcMsg} (影响 ${selection.length} 个节点)`);
 					} else {
-						callback("No nodes selected for deletion");
+						callback("没有选中任何节点进行删除");
 					}
 				} else {
 					Editor.Ipc.sendToMain(ipcMsg);
-					callback(null, `Menu action triggered: ${menuPath} -> ${ipcMsg}`);
+					callback(null, `菜单动作已触发: ${menuPath} -> ${ipcMsg}`);
 				}
 			} catch (err) {
-				callback(`Failed to execute IPC ${ipcMsg}: ${err.message}`);
+				callback(`执行 IPC ${ipcMsg} 失败: ${err.message}`);
 			}
 		} else {
 			// 对于未在映射表中的菜单，尝试通用的 menu:click (虽然不一定有效)
 			// 或者直接返回不支持的警告
-			addLog("warn", `Menu item '${menuPath}' not found in supported map. Trying legacy fallback.`);
+			addLog("warn", `支持映射表中找不到菜单项 '${menuPath}'。尝试通过 legacy 模式执行。`);
 
 			// 尝试通用调用
 			try {
 				// 注意：Cocos Creator 2.x 的 menu:click 通常需要 Electron 菜单 ID，而不只是路径
 				// 这里做个尽力而为的尝试
 				Editor.Ipc.sendToMain('menu:click', menuPath);
-				callback(null, `Generic menu action sent: ${menuPath} (Success guaranteed only for supported items)`);
+				callback(null, `通用菜单动作已发送: ${menuPath} (仅支持项保证成功)`);
 			} catch (e) {
-				callback(`Failed to execute menu item: ${menuPath}`);
+				callback(`执行菜单项失败: ${menuPath}`);
 			}
 		}
 	},
@@ -2033,12 +2040,12 @@ CCProgram fs %{
 					return callback(null, { valid: true, message: "Warning: TypeScript file seems to lack standard definitions (class/interface), but basic syntax check is skipped due to missing compiler." });
 				}
 
-				callback(null, { valid: true, message: "TypeScript basic check passed. (Full compilation validation requires editor build)" });
+				callback(null, { valid: true, message: "TypeScript 基础检查通过。(完整编译验证需要通过编辑器构建流程)" });
 			} else {
-				callback(null, { valid: true, message: "Unknown script type, validation skipped." });
+				callback(null, { valid: true, message: "未知的脚本类型，跳过验证。" });
 			}
 		} catch (err) {
-			callback(null, { valid: false, message: `Read Error: ${err.message}` });
+			callback(null, { valid: false, message: `读取错误: ${err.message}` });
 		}
 	},
 	// 暴露给 MCP 或面板的 API 封装
@@ -2067,7 +2074,7 @@ CCProgram fs %{
 		},
 		"clear-logs"() {
 			logBuffer = [];
-			addLog("info", "Logs cleared");
+			addLog("info", "日志已清理");
 		},
 
 		// 修改场景中的节点（需要通过 scene-script）
@@ -2103,7 +2110,7 @@ CCProgram fs %{
 		"set-auto-start"(event, value) {
 			this.getProfile().set("auto-start", value);
 			this.getProfile().save();
-			addLog("info", `Auto-start set to: ${value}`);
+			addLog("info", `自动启动已设置为: ${value}`);
 		},
 
 		"inspect-apis"() {
@@ -2229,16 +2236,38 @@ CCProgram fs %{
 
 
 	// 全局文件搜索
-	findInFile(args, callback) {
-		const { query, extensions, includeSubpackages } = args;
+	// 项目搜索 (升级版 find_in_file)
+	searchProject(args, callback) {
+		const { query, useRegex, path: searchPath, matchType, extensions } = args;
 
-		const assetsPath = Editor.assetdb.urlToFspath("db://assets");
+		// 默认值
+		const rootPathUrl = searchPath || "db://assets";
+		const rootPath = Editor.assetdb.urlToFspath(rootPathUrl);
+
+		if (!rootPath || !fs.existsSync(rootPath)) {
+			return callback(`Invalid search path: ${rootPathUrl}`);
+		}
+
+		const mode = matchType || "content"; // content, file_name, dir_name
 		const validExtensions = extensions || [".js", ".ts", ".json", ".fire", ".prefab", ".xml", ".txt", ".md"];
 		const results = [];
-		const MAX_RESULTS = 500; // 限制返回结果数量，防止溢出
+		const MAX_RESULTS = 500;
+
+		let regex = null;
+		if (useRegex) {
+			try {
+				regex = new RegExp(query);
+			} catch (e) {
+				return callback(`Invalid regex: ${e.message}`);
+			}
+		}
+
+		const checkMatch = (text) => {
+			if (useRegex) return regex.test(text);
+			return text.includes(query);
+		};
 
 		try {
-			// 递归遍历函数
 			const walk = (dir) => {
 				if (results.length >= MAX_RESULTS) return;
 
@@ -2246,49 +2275,88 @@ CCProgram fs %{
 				list.forEach((file) => {
 					if (results.length >= MAX_RESULTS) return;
 
-					// 忽略隐藏文件和 node_modules
-					if (file.startsWith('.') || file === 'node_modules' || file === 'bin' || file === 'local') return;
+					// 忽略隐藏文件和常用忽略目录
+					if (file.startsWith('.') || file === 'node_modules' || file === 'bin' || file === 'local' || file === 'library' || file === 'temp') return;
 
 					const filePath = pathModule.join(dir, file);
 					const stat = fs.statSync(filePath);
 
 					if (stat && stat.isDirectory()) {
+						// 目录名搜索
+						if (mode === "dir_name") {
+							if (checkMatch(file)) {
+								const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
+								const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+								results.push({
+									filePath: dbPath,
+									type: "directory",
+									name: file
+								});
+							}
+						}
+						// 递归
 						walk(filePath);
 					} else {
-						// 检查后缀
 						const ext = pathModule.extname(file).toLowerCase();
-						if (validExtensions.includes(ext)) {
-							try {
-								const content = fs.readFileSync(filePath, 'utf8');
-								// 简单的行匹配
-								const lines = content.split('\n');
-								lines.forEach((line, index) => {
-									if (results.length >= MAX_RESULTS) return;
-									if (line.includes(query)) {
-										// 转换为项目相对路径 (db://assets/...)
-										const relativePath = pathModule.relative(assetsPath, filePath);
-										// 统一使用 forward slash
-										const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
 
-										results.push({
-											filePath: dbPath,
-											line: index + 1,
-											content: line.trim()
-										});
-									}
-								});
-							} catch (e) {
-								// 读取文件出错，跳过
+						// 文件名搜索
+						if (mode === "file_name") {
+							if (validExtensions && validExtensions.length > 0 && !validExtensions.includes(ext)) {
+								// 如果指定了后缀，则必须匹配
+								// (Logic kept simple: if extensions provided, filter by them. If not provided, search all files or default list?)
+								// Let's stick to validExtensions for file_name search too to avoid noise, or maybe allow all if extensions is explicitly null?
+								// Schema default is null. Let's start with checkMatch(file) directly if no extensions provided.
+								// Actually validExtensions has a default list. Let's respect it if it was default, but for file_name maybe we want all?
+								// Let's use validExtensions only if mode is content. For file_name, usually we search everything unless filtered.
+								// But to be safe and consistent with previous find_in_file, let's respect validExtensions.
+							}
+
+							// 简化逻辑：对文件名搜索，也检查后缀（如果用户未传则用默认列表）
+							if (validExtensions.includes(ext)) {
+								if (checkMatch(file)) {
+									const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
+									const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+									results.push({
+										filePath: dbPath,
+										type: "file",
+										name: file
+									});
+								}
+							}
+							// 如果需要搜索非文本文件（如 .png），可以传入 extensions=['.png']
+						}
+
+						// 内容搜索
+						else if (mode === "content") {
+							if (validExtensions.includes(ext)) {
+								try {
+									const content = fs.readFileSync(filePath, 'utf8');
+									const lines = content.split('\n');
+									lines.forEach((line, index) => {
+										if (results.length >= MAX_RESULTS) return;
+										if (checkMatch(line)) {
+											const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
+											const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+											results.push({
+												filePath: dbPath,
+												line: index + 1,
+												content: line.trim()
+											});
+										}
+									});
+								} catch (e) {
+									// Skip read error
+								}
 							}
 						}
 					}
 				});
 			};
 
-			walk(assetsPath);
+			walk(rootPath);
 			callback(null, results);
 		} catch (err) {
-			callback(`Find in file failed: ${err.message}`);
+			callback(`Search project failed: ${err.message}`);
 		}
 	},
 
@@ -2344,7 +2412,7 @@ CCProgram fs %{
 			const sha = hashSum.digest('hex');
 			callback(null, { path: url, sha: sha });
 		} catch (err) {
-			callback(`Failed to calculate SHA: ${err.message}`);
+			callback(`计算 SHA 失败: ${err.message}`);
 		}
 	},
 

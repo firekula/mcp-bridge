@@ -161,7 +161,7 @@ module.exports = {
         const { name, parentId, type } = args;
         const scene = cc.director.getScene();
         if (!scene) {
-            if (event.reply) event.reply(new Error("Scene not ready or loading."));
+            if (event.reply) event.reply(new Error("场景尚未准备好或正在加载。"));
             return;
         }
 
@@ -226,7 +226,7 @@ module.exports = {
             newNode.width = 120;
             newNode.height = 40;
         } else {
-            newNode = new cc.Node(name || "New Node");
+            newNode = new cc.Node(name || "新建节点");
         }
 
         // 设置层级
@@ -550,12 +550,12 @@ module.exports = {
 
                             Editor.Ipc.sendToMain("scene:dirty");
                             Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
-                            if (event.reply) event.reply(null, "Component properties updated");
+                            if (event.reply) event.reply(null, "组件属性已更新");
                         } else {
-                            if (event.reply) event.reply(null, "No properties to update");
+                            if (event.reply) event.reply(null, "没有需要更新的属性");
                         }
                     } else {
-                        if (event.reply) event.reply(new Error(`Component not found (Type: ${componentType}, ID: ${componentId})`));
+                        if (event.reply) event.reply(new Error(`找不到组件 (类型: ${componentType}, ID: ${componentId})`));
                     }
                 } catch (err) {
                     if (event.reply) event.reply(new Error(`更新组件失败: ${err.message}`));
@@ -587,11 +587,11 @@ module.exports = {
                                     if (val instanceof cc.ValueType) {
                                         properties[key] = val.toString();
                                     } else if (val instanceof cc.Asset) {
-                                        properties[key] = `Asset(${val.name})`;
+                                        properties[key] = `资源(${val.name})`;
                                     } else if (val instanceof cc.Node) {
-                                        properties[key] = `Node(${val.name})`;
+                                        properties[key] = `节点(${val.name})`;
                                     } else if (val instanceof cc.Component) {
-                                        properties[key] = `Component(${val.name}<${val.__typename}>)`;
+                                        properties[key] = `组件(${val.name}<${val.__typename}>)`;
                                     } else {
                                         // 数组和普通对象
                                         // 尝试转换为纯 JSON 数据以避免 IPC 错误（如包含原生对象/循环引用）
@@ -601,7 +601,7 @@ module.exports = {
                                             properties[key] = JSON.parse(jsonStr);
                                         } catch (e) {
                                             // 如果 JSON 失败（例如循环引用），格式化为字符串
-                                            properties[key] = `[Complex Object: ${val.constructor ? val.constructor.name : typeof val}]`;
+                                            properties[key] = `[复杂对象: ${val.constructor ? val.constructor.name : typeof val}]`;
                                         }
                                     }
                                 } catch (e) {

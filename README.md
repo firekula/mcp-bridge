@@ -262,7 +262,6 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **描述**: 执行菜单项
 - **参数**:
     - `menuPath`: 菜单项路径。
-        - 支持 `Project/Build` (构建项目)。
         - 支持 `delete-node:${UUID}` (推荐)：**直接删除指定节点**，不依赖编辑器选中状态，比 `Edit/Delete` 更稳定。
     - **注意**: 为了精确控制和稳定性，原有的 `File/Save`, `Edit/Undo` 等映射已移除，请直接使用 `save_scene`, `manage_undo` 等专用 MCP 工具。
 
@@ -292,13 +291,31 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `filePath`: 脚本路径，如 `db://assets/scripts/TestScript.ts`
     - **注意**：对于 TypeScript 文件，仅进行基础语法结构检查，不进行完整编译验证。
 
-### 22. find_in_file
+### 22. search_project
 
-- **描述**: 全局文件搜索
+- **描述**: 搜索项目文件 (支持正则、文件名、目录名搜索)
 - **参数**:
-    - `query`: 搜索关键词
-    - `extensions`: 文件后缀列表 (可选，默认 `['.js', '.ts', '.json', '.fire', '.prefab', '.xml', '.txt', '.md']`)
-    - `includeSubpackages`: 是否搜索子包 (可选，默认 true)
+    - `query`: 搜索关键词或正则表达式 (String)
+    - `useRegex`: 是否使用正则表达式 (Boolean, 默认 false)
+    - `path`: 搜索路径 (String, 默认 "db://assets")
+    - `matchType`: 匹配类型 (String: "content", "file_name", "dir_name", 默认 "content")
+    - `extensions`: 文件后缀列表 (Array<String>, 可选)
+    - `includeSubpackages`: 是否搜索子包 (Boolean, 默认 true)
+
+**示例**:
+```json
+// 正则搜索
+{
+  "query": "^class\\s+\\w+",
+  "useRegex": true,
+  "matchType": "content"
+}
+// 搜索文件名
+{
+  "query": "Player",
+  "matchType": "file_name"
+}
+```
 
 ### 23. manage_undo
 
