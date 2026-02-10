@@ -17,7 +17,7 @@ Editor.Panel.extend({
 
 	ready() {
 		const root = this.shadowRoot;
-		// 获取元素
+		// 获取 DOM 元素
 		const els = {
 			port: root.querySelector("#portInput"),
 			btnToggle: root.querySelector("#btnToggle"),
@@ -52,7 +52,7 @@ Editor.Panel.extend({
 			}
 		});
 
-		// Initialize IPC UI
+		// 初始化 IPC UI
 		new IpcUi(root);
 
 		// 2. 标签切换
@@ -104,7 +104,8 @@ Editor.Panel.extend({
 			els.result.value = "";
 		});
 		els.testBtn.addEventListener("confirm", () => this.runTest(els));
-		// 添加探查功能
+		els.testBtn.addEventListener("confirm", () => this.runTest(els));
+		// 添加 API 探查功能
 		const probeBtn = root.querySelector("#probeApisBtn");
 		if (probeBtn) {
 			probeBtn.addEventListener("confirm", () => {
@@ -153,7 +154,7 @@ Editor.Panel.extend({
 					};
 					els.toolsList.appendChild(item);
 				});
-				// 保存工具信息到实例，以便后续使用
+				// 保存工具映射表，以便后续检索
 				this.toolsMap = toolsMap;
 				els.result.value = `Loaded ${data.tools.length} tools.`;
 			})

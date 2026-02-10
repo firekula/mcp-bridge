@@ -61,5 +61,10 @@
 ### 3. 关键 Bug 修复
 - **属性批量应用中断**: 修复了 `scene-script.js` 中 `applyProperties` 函数在处理 Asset 类型属性时错误使用 `return` 导致后续属性（如 `type`）被忽略的问题。现在改为 `continue`，确保所有属性都能被正确应用。
 
-## 五、 总结
-本次更新不仅修复了制约生产力的材质与资源同步 bug，还通过引入 `manage_shader` 和全方位的文档中文化，极大提升了开发者（及 AI 助手）在 Cocos Creator 2.4.x 环境下的操作体验。
+
+### 6.2 菜单映射清理
+- **移除冗余**: 清理了 `execute_menu_item` 中过时或不稳定的菜单映射 (如 `File/Save`, `Edit/Delete` 等)。
+- **规范操作**: 强制引导 AI 使用 `delete-node:UUID` 或专用 MCP 工具 (`save_scene`, `manage_undo`)，提高了自动化流程的稳定性。
+
+## 六、 总结
+本次更新不仅修复了制约生产力的材质与资源同步 bug，还通过引入 `manage_shader` 和全方位的文档中文化，极大提升了开发者（及 AI 助手）在 Cocos Creator 2.4.x 环境下的操作体验。针对菜单执行工具的清理进一步规范了自动化操作流程，减少了潜在的不稳定性。

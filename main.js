@@ -378,23 +378,36 @@ const getToolsList = () => {
 		},
 		{
 			name: "execute_menu_item",
-			description: `${globalPrecautions} 执行菜单项`,
+			description: `${globalPrecautions} 执行菜单项。对于节点删除，请使用 "delete-node:UUID" 格式以确保精确执行。对于保存、撤销等操作，请优先使用专用工具 (save_scene, manage_undo)。`,
 			inputSchema: {
 				type: "object",
 				properties: {
-					menuPath: { type: "string", description: "菜单项路径" },
+					menuPath: { type: "string", description: "菜单项路径 (支持 'Project/Build' 或 'delete-node:UUID')" },
 				},
 				required: ["menuPath"],
 			},
 		},
 		{
 			name: "apply_text_edits",
-			description: `${globalPrecautions} 应用文本编辑`,
+			description: `${globalPrecautions} 对文件应用文本编辑。**专用于修改脚本源代码 (.js, .ts) 或文本文件**。如果要修改场景节点属性，请使用 'manage_components'。`,
 			inputSchema: {
 				type: "object",
 				properties: {
-					filePath: { type: "string", description: "文件路径" },
-					edits: { type: "array", items: { type: "object" }, description: "编辑操作列表" },
+					edits: {
+						type: "array",
+						items: {
+							type: "object",
+							properties: {
+								type: { type: "string", enum: ["insert", "delete", "replace"], description: "操作类型" },
+								start: { type: "number", description: "起始偏移量 (字符索引)" },
+								end: { type: "number", description: "结束偏移量 (delete/replace 用)" },
+								position: { type: "number", description: "插入位置 (insert 用)" },
+								text: { type: "string", description: "要插入或替换的文本" },
+							},
+						},
+						description: "编辑操作列表。请严格使用偏移量(offset)而非行号。",
+					},
+					filePath: { type: "string", description: "文件路径 (db://...)" },
 				},
 				required: ["filePath", "edits"],
 			},

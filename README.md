@@ -261,7 +261,10 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 - **描述**: 执行菜单项
 - **参数**:
-    - `menuPath`: 菜单项路径，如 `Assets/Create/Folder`。支持映射常用命令：`File/New Scene`, `File/Save Scene`, `Edit/Undo`, `Edit/Redo`, `Project/Build` 等。
+    - `menuPath`: 菜单项路径。
+        - 支持 `Project/Build` (构建项目)。
+        - 支持 `delete-node:${UUID}` (推荐)：**直接删除指定节点**，不依赖编辑器选中状态，比 `Edit/Delete` 更稳定。
+    - **注意**: 为了精确控制和稳定性，原有的 `File/Save`, `Edit/Undo` 等映射已移除，请直接使用 `save_scene`, `manage_undo` 等专用 MCP 工具。
 
 ### 19. apply_text_edits
 
