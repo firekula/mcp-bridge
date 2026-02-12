@@ -399,7 +399,11 @@ const getToolsList = () => {
 						enum: ["node", "asset"],
 						description: "目标类型 (用于 set_selection 操作)",
 					},
-					properties: { type: "object", description: "操作属性" },
+					properties: {
+						type: "object",
+						description:
+							"操作属性。refresh_editor 支持 properties.path 指定刷新路径（如 'db://assets/scripts/MyScript.ts' 或 'db://assets/resources'）。不传则默认刷新 'db://assets'（全量刷新，大型项目可能耗时数分钟，建议尽量指定具体路径）。",
+					},
 				},
 				required: ["action"],
 			},
@@ -1531,8 +1535,13 @@ export default class NewScript extends cc.Component {
 				callback(null, "选中状态已更新");
 				break;
 			case "refresh_editor":
-				// 刷新编辑器
-				const refreshPath = properties && properties.path ? properties.path : "db://assets/scripts";
+				// 刷新编辑器资源数据库
+				// 支持指定路径以避免大型项目全量刷新耗时过长
+				// 示例: properties.path = 'db://assets/scripts/MyScript.ts' (刷新单个文件)
+				//        properties.path = 'db://assets/resources' (刷新某个目录)
+				//        不传 (默认 'db://assets'，全量刷新)
+				const refreshPath = properties && properties.path ? properties.path : "db://assets";
+				addLog("info", `[refresh_editor] 开始刷新: ${refreshPath}`);
 				Editor.assetdb.refresh(refreshPath, (err) => {
 					if (err) {
 						addLog("error", `刷新失败: ${err}`);
