@@ -169,7 +169,7 @@ const getNewSceneTemplate = () => {
  */
 const getToolsList = () => {
 	const globalPrecautions =
-		"【AI 安全守则】: 1. 执行任何写操作前必须先通过 get_scene_hierarchy 或 manage_components(get) 验证主体存在。 2. 严禁基于假设盲目猜测属性名。 3. 资源属性（如 cc.Prefab）必须通过 UUID 进行赋值。";
+		"【AI 安全守则】: 1. 执行任何写操作前必须先通过 get_scene_hierarchy 或 manage_components(get) 验证主体存在。 2. 严禁基于假设盲目猜测属性名。 3. 资源属性（如 cc.Prefab）必须通过 UUID 进行赋值。 4. 严禁频繁刷新全局资源 (refresh_editor)，必须通过 properties.path 指定具体修改的文件或目录以防止编辑器长期卡死。";
 	return [
 		{
 			name: "get_selected_node",
@@ -299,7 +299,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "manage_script",
-			description: `${globalPrecautions} 管理脚本文件。注意：创建或修改脚本后，编辑器需要时间进行编译（通常几秒钟）。新脚本在编译完成前无法作为组件添加到节点。建议在 create 后调用 refresh_editor，或等待一段时间后再使用 manage_components。`,
+			description: `${globalPrecautions} 管理脚本文件。注意：创建或修改脚本后，编辑器需要时间进行编译（通常几秒钟）。新脚本在编译完成前无法作为组件添加到节点。建议在 create 后调用 refresh_editor (务必指定 path 到具体文件)，或等待一段时间后再使用 manage_components。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -402,7 +402,7 @@ const getToolsList = () => {
 					properties: {
 						type: "object",
 						description:
-							"操作属性。refresh_editor 支持 properties.path 指定刷新路径（如 'db://assets/scripts/MyScript.ts' 或 'db://assets/resources'）。不传则默认刷新 'db://assets'（全量刷新，大型项目可能耗时数分钟，建议尽量指定具体路径）。",
+							"操作属性。⚠️极为重要：refresh_editor 必须通过 properties.path 指定精确的刷新路径（如 'db://assets/scripts/MyScript.ts'）。严禁不带 path 参数进行全局刷新 (db://assets)，这在大型项目中会导致编辑器卡死数分钟，严重阻塞工作流。",
 					},
 				},
 				required: ["action"],

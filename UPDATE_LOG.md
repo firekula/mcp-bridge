@@ -103,10 +103,10 @@
 - **问题**: 原实现使用 `forEach` 并行派发所有子操作，多个 `AssetDB` 操作同时执行引发编辑器卡死。
 - **修复**: 改为串行链式执行（`next()` 递归调用），确保每个操作完成后再执行下一个。
 
-### 4. `refresh_editor` 路径参数优化
+### 4. `refresh_editor` 路径参数优化与警示强化
 
-- **问题**: 默认刷新 `db://assets/scripts`（后改为 `db://assets`），在大型生产项目中 `AssetDB.refresh()` 耗时可达 3 分钟。
-- **修复**: 工具 Schema 新增 `properties.path` 参数说明，支持指定精确刷新路径（如单个文件 `db://assets/resources/sdk_config.json` 或目录 `db://assets/resources`），大幅减少刷新耗时。
+- **工具 Schema 强化**: 在 `manage_editor` 的工具描述中加入红色警示符号 (⚠️) 和“极为重要”字样，明确要求 AI 必须指定 `path`。
+- **AI 安全守则第 4 条**: 在全局 `globalPrecautions` 中新增第四条守则，强制要求 AI 避免刷新全局资源。
 - **实测效果**: 生产项目中，从默认全量刷新 **172 秒** 降至指定目录刷新 **19 秒**。
 
 ### 5. 杂项修复
