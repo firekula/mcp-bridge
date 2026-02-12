@@ -15,6 +15,83 @@ let serverConfig = {
 };
 
 /**
+ * 指令队列 - 确保所有 MCP 工具调用串行执行
+ * 防止 AssetDB.refresh 等异步重操作被并发请求打断，导致编辑器卡死
+ * @see mcp_freeze_analysis.md
+ */
+let commandQueue = [];
+let isProcessingCommand = false;
+
+/**
+ * 将一个异步操作加入队列，保证串行执行
+ * @param {Function} fn 接受 done 回调的函数，fn(done) 中操作完成后必须调用 done()
+ * @returns {Promise} 操作完成后 resolve
+ */
+function enqueueCommand(fn) {
+	return new Promise((resolve) => {
+		commandQueue.push({ fn, resolve });
+		processNextCommand();
+	});
+}
+
+/**
+ * 从队列中取出下一个指令并执行
+ */
+function processNextCommand() {
+	if (isProcessingCommand || commandQueue.length === 0) return;
+	isProcessingCommand = true;
+	const { fn, resolve } = commandQueue.shift();
+	try {
+		fn(() => {
+			isProcessingCommand = false;
+			resolve();
+			processNextCommand();
+		});
+	} catch (e) {
+		// 防止队列因未捕获异常永久阻塞
+		addLog("error", `[CommandQueue] 指令执行异常: ${e.message}`);
+		isProcessingCommand = false;
+		resolve();
+		processNextCommand();
+	}
+}
+
+/**
+ * 带超时保护的 callSceneScript 包装
+ * 防止 Scene 面板阻塞时 callback 永不返回，导致 HTTP 连接堆积
+ * @param {string} pluginName 插件名
+ * @param {string} method 方法名
+ * @param {*} args 参数（可以是对象或 null）
+ * @param {Function} callback 回调 (err, result)
+ * @param {number} timeout 超时毫秒数，默认 15000
+ */
+function callSceneScriptWithTimeout(pluginName, method, args, callback, timeout = 15000) {
+	let settled = false;
+	const timer = setTimeout(() => {
+		if (!settled) {
+			settled = true;
+			addLog("error", `[超时] callSceneScript "${method}" 超过 ${timeout}ms 未响应`);
+			callback(`操作超时: ${method} (${timeout}ms)`);
+		}
+	}, timeout);
+
+	// callSceneScript 支持 3 参数（无 args）和 4 参数两种调用形式
+	const wrappedCallback = (err, result) => {
+		if (!settled) {
+			settled = true;
+			clearTimeout(timer);
+			callback(err, result);
+		}
+	};
+
+	if (args === null || args === undefined) {
+		Editor.Scene.callSceneScript(pluginName, method, wrappedCallback);
+	} else {
+		Editor.Scene.callSceneScript(pluginName, method, args, wrappedCallback);
+	}
+}
+
+/**
  * 封装日志函数，同时发送给面板、保存到内存并在编辑器控制台打印
  * @param {'info' | 'success' | 'warn' | 'error'} type 日志类型
  * @param {string} message 日志内容
@@ -42,7 +119,7 @@ function addLog(type, message) {
  * @returns {string} 拼接后的日志字符串
  */
 function getLogContent() {
-	return logBuffer.map(entry => `[${entry.time}] [${entry.type}] ${entry.content}`).join('\n');
+	return logBuffer.map((entry) => `[${entry.time}] [${entry.type}] ${entry.content}`).join("\n");
 }
 
 /**
@@ -91,7 +168,8 @@ const getNewSceneTemplate = () => {
  * @returns {Array<Object>} 工具定义数组
  */
 const getToolsList = () => {
-	const globalPrecautions = "【AI 安全守则】: 1. 执行任何写操作前必须先通过 get_scene_hierarchy 或 manage_components(get) 验证主体存在。 2. 严禁基于假设盲目猜测属性名。 3. 资源属性（如 cc.Prefab）必须通过 UUID 进行赋值。";
+	const globalPrecautions =
+		"【AI 安全守则】: 1. 执行任何写操作前必须先通过 get_scene_hierarchy 或 manage_components(get) 验证主体存在。 2. 严禁基于假设盲目猜测属性名。 3. 资源属性（如 cc.Prefab）必须通过 UUID 进行赋值。";
 	return [
 		{
 			name: "get_selected_node",
@@ -202,10 +280,19 @@ const getToolsList = () => {
 				type: "object",
 				properties: {
 					nodeId: { type: "string", description: "节点 UUID" },
-					action: { type: "string", enum: ["add", "remove", "update", "get"], description: "操作类型 (add: 添加组件, remove: 移除组件, update: 更新组件属性, get: 获取组件列表)" },
+					action: {
+						type: "string",
+						enum: ["add", "remove", "update", "get"],
+						description:
+							"操作类型 (add: 添加组件, remove: 移除组件, update: 更新组件属性, get: 获取组件列表)",
+					},
 					componentType: { type: "string", description: "组件类型，如 cc.Sprite (add/update 操作需要)" },
 					componentId: { type: "string", description: "组件 ID (remove/update 操作可选)" },
-					properties: { type: "object", description: "组件属性 (add/update 操作使用). 支持智能解析: 如果属性类型是组件但提供了节点UUID，会自动查找对应组件。" },
+					properties: {
+						type: "object",
+						description:
+							"组件属性 (add/update 操作使用). 支持智能解析: 如果属性类型是组件但提供了节点UUID，会自动查找对应组件。",
+					},
 				},
 				required: ["nodeId", "action"],
 			},
@@ -335,7 +422,11 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					action: { type: "string", enum: ["create", "delete", "get_info", "update"], description: "操作类型" },
+					action: {
+						type: "string",
+						enum: ["create", "delete", "get_info", "update"],
+						description: "操作类型",
+					},
 					path: { type: "string", description: "材质路径，如 db://assets/materials/NewMaterial.mat" },
 					properties: {
 						type: "object",
@@ -343,8 +434,8 @@ const getToolsList = () => {
 						properties: {
 							shaderUuid: { type: "string", description: "关联的 Shader (Effect) UUID" },
 							defines: { type: "object", description: "预编译宏定义" },
-							uniforms: { type: "object", description: "Uniform 参数列表" }
-						}
+							uniforms: { type: "object", description: "Uniform 参数列表" },
+						},
 					},
 				},
 				required: ["action", "path"],
@@ -356,7 +447,11 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					action: { type: "string", enum: ["create", "delete", "get_info", "update"], description: "操作类型" },
+					action: {
+						type: "string",
+						enum: ["create", "delete", "get_info", "update"],
+						description: "操作类型",
+					},
 					path: { type: "string", description: "纹理路径，如 db://assets/textures/NewTexture.png" },
 					properties: { type: "object", description: "纹理属性" },
 				},
@@ -369,7 +464,11 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					action: { type: "string", enum: ["create", "delete", "read", "write", "get_info"], description: "操作类型" },
+					action: {
+						type: "string",
+						enum: ["create", "delete", "read", "write", "get_info"],
+						description: "操作类型",
+					},
 					path: { type: "string", description: "着色器路径，如 db://assets/effects/NewEffect.effect" },
 					content: { type: "string", description: "着色器内容 (create/write)" },
 				},
@@ -382,7 +481,10 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					menuPath: { type: "string", description: "菜单项路径 (支持 'Project/Build' 或 'delete-node:UUID')" },
+					menuPath: {
+						type: "string",
+						description: "菜单项路径 (支持 'Project/Build' 或 'delete-node:UUID')",
+					},
 				},
 				required: ["menuPath"],
 			},
@@ -398,7 +500,11 @@ const getToolsList = () => {
 						items: {
 							type: "object",
 							properties: {
-								type: { type: "string", enum: ["insert", "delete", "replace"], description: "操作类型" },
+								type: {
+									type: "string",
+									enum: ["insert", "delete", "replace"],
+									description: "操作类型",
+								},
 								start: { type: "number", description: "起始偏移量 (字符索引)" },
 								end: { type: "number", description: "结束偏移量 (delete/replace 用)" },
 								position: { type: "number", description: "插入位置 (insert 用)" },
@@ -419,7 +525,11 @@ const getToolsList = () => {
 				type: "object",
 				properties: {
 					limit: { type: "number", description: "输出限制" },
-					type: { type: "string", enum: ["info", "warn", "error", "success", "mcp"], description: "输出类型 (info, warn, error, success, mcp)" },
+					type: {
+						type: "string",
+						enum: ["info", "warn", "error", "success", "mcp"],
+						description: "输出类型 (info, warn, error, success, mcp)",
+					},
 				},
 			},
 		},
@@ -441,23 +551,32 @@ const getToolsList = () => {
 				type: "object",
 				properties: {
 					query: { type: "string", description: "搜索关键词或正则表达式模式" },
-					useRegex: { type: "boolean", description: "是否将 query 视为正则表达式 (仅在 matchType 为 'content', 'file_name' 或 'dir_name' 时生效)" },
-					path: { type: "string", description: "搜索起点路径，例如 'db://assets/scripts'。默认为 'db://assets'" },
+					useRegex: {
+						type: "boolean",
+						description:
+							"是否将 query 视为正则表达式 (仅在 matchType 为 'content', 'file_name' 或 'dir_name' 时生效)",
+					},
+					path: {
+						type: "string",
+						description: "搜索起点路径，例如 'db://assets/scripts'。默认为 'db://assets'",
+					},
 					matchType: {
 						type: "string",
 						enum: ["content", "file_name", "dir_name"],
-						description: "匹配模式：'content' (内容关键词/正则), 'file_name' (搜索文件名), 'dir_name' (搜索文件夹名)"
+						description:
+							"匹配模式：'content' (内容关键词/正则), 'file_name' (搜索文件名), 'dir_name' (搜索文件夹名)",
 					},
 					extensions: {
 						type: "array",
 						items: { type: "string" },
-						description: "限定文件后缀 (如 ['.js', '.ts'])。仅在 matchType 为 'content' 或 'file_name' 时有效。",
-						default: [".js", ".ts", ".json", ".fire", ".prefab", ".xml", ".txt", ".md"]
+						description:
+							"限定文件后缀 (如 ['.js', '.ts'])。仅在 matchType 为 'content' 或 'file_name' 时有效。",
+						default: [".js", ".ts", ".json", ".fire", ".prefab", ".xml", ".txt", ".md"],
 					},
-					includeSubpackages: { type: "boolean", default: true, description: "是否递归搜索子目录" }
+					includeSubpackages: { type: "boolean", default: true, description: "是否递归搜索子目录" },
 				},
-				required: ["query"]
-			}
+				required: ["query"],
+			},
 		},
 		{
 			name: "manage_undo",
@@ -468,12 +587,12 @@ const getToolsList = () => {
 					action: {
 						type: "string",
 						enum: ["undo", "redo", "begin_group", "end_group", "cancel_group"],
-						description: "操作类型"
+						description: "操作类型",
 					},
-					description: { type: "string", description: "撤销组的描述 (用于 begin_group)" }
+					description: { type: "string", description: "撤销组的描述 (用于 begin_group)" },
 				},
-				required: ["action"]
-			}
+				required: ["action"],
+			},
 		},
 		{
 			name: "manage_vfx",
@@ -484,7 +603,7 @@ const getToolsList = () => {
 					action: {
 						type: "string",
 						enum: ["create", "update", "get_info"],
-						description: "操作类型"
+						description: "操作类型",
 					},
 					nodeId: { type: "string", description: "节点 UUID (用于 update/get_info)" },
 					properties: {
@@ -502,14 +621,14 @@ const getToolsList = () => {
 							speed: { type: "number", description: "速度" },
 							angle: { type: "number", description: "角度" },
 							gravity: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } } },
-							file: { type: "string", description: "粒子文件路径 (plist) 或 texture 路径" }
-						}
+							file: { type: "string", description: "粒子文件路径 (plist) 或 texture 路径" },
+						},
 					},
 					name: { type: "string", description: "节点名称 (用于 create)" },
-					parentId: { type: "string", description: "父节点 ID (用于 create)" }
+					parentId: { type: "string", description: "父节点 ID (用于 create)" },
 				},
-				required: ["action"]
-			}
+				required: ["action"],
+			},
 		},
 		{
 			name: "get_sha",
@@ -517,10 +636,10 @@ const getToolsList = () => {
 			inputSchema: {
 				type: "object",
 				properties: {
-					path: { type: "string", description: "文件路径，如 db://assets/scripts/Test.ts" }
+					path: { type: "string", description: "文件路径，如 db://assets/scripts/Test.ts" },
 				},
-				required: ["path"]
-			}
+				required: ["path"],
+			},
 		},
 		{
 			name: "manage_animation",
@@ -531,18 +650,16 @@ const getToolsList = () => {
 					action: {
 						type: "string",
 						enum: ["get_list", "get_info", "play", "stop", "pause", "resume"],
-						description: "操作类型"
+						description: "操作类型",
 					},
 					nodeId: { type: "string", description: "节点 UUID" },
-					clipName: { type: "string", description: "动画剪辑名称 (用于 play)" }
+					clipName: { type: "string", description: "动画剪辑名称 (用于 play)" },
 				},
-				required: ["action", "nodeId"]
-			}
-		}
+				required: ["action", "nodeId"],
+			},
+		},
 	];
 };
-
-
 
 module.exports = {
 	"scene-script": "scene-script.js",
@@ -603,8 +720,6 @@ module.exports = {
 						// 明确返回成功结构
 						res.writeHead(200);
 						return res.end(JSON.stringify({ tools: tools }));
-						res.writeHead(200);
-						return res.end(JSON.stringify({ tools: tools }));
 					}
 					if (url === "/list-resources") {
 						const resources = this.getResourcesList();
@@ -625,13 +740,17 @@ module.exports = {
 								addLog("success", `读取成功: ${uri}`);
 								res.writeHead(200);
 								// 返回 MCP Resource 格式: { contents: [{ uri, mimeType, text }] }
-								res.end(JSON.stringify({
-									contents: [{
-										uri: uri,
-										mimeType: "application/json",
-										text: typeof content === 'string' ? content : JSON.stringify(content)
-									}]
-								}));
+								res.end(
+									JSON.stringify({
+										contents: [
+											{
+												uri: uri,
+												mimeType: "application/json",
+												text: typeof content === "string" ? content : JSON.stringify(content),
+											},
+										],
+									}),
+								);
 							});
 						} catch (e) {
 							res.writeHead(500);
@@ -642,40 +761,46 @@ module.exports = {
 					if (url === "/call-tool") {
 						try {
 							const { name, arguments: args } = JSON.parse(body || "{}");
-							addLog("mcp", `REQ -> [${name}]`);
+							addLog("mcp", `REQ -> [${name}] (队列长度: ${commandQueue.length})`);
 
-							this.handleMcpCall(name, args, (err, result) => {
-								const response = {
-									content: [
-										{
-											type: "text",
-											text: err
-												? `Error: ${err}`
-												: typeof result === "object"
-													? JSON.stringify(result, null, 2)
-													: result,
-										},
-									],
-								};
-								if (err) {
-									addLog("error", `RES <- [${name}] 失败: ${err}`);
-								} else {
-									// 成功时尝试捕获简单的结果预览（如果是字符串或简短对象）
-									let preview = "";
-									if (typeof result === 'string') {
-										preview = result.length > 100 ? result.substring(0, 100) + "..." : result;
-									} else if (typeof result === 'object') {
-										try {
-											const jsonStr = JSON.stringify(result);
-											preview = jsonStr.length > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
-										} catch (e) {
-											preview = "Object (Circular/Unserializable)";
+							// 【关键修复】所有 MCP 指令通过队列串行化执行，
+							// 防止 AssetDB.refresh 等异步操作被并发请求打断导致编辑器卡死
+							enqueueCommand((done) => {
+								this.handleMcpCall(name, args, (err, result) => {
+									const response = {
+										content: [
+											{
+												type: "text",
+												text: err
+													? `Error: ${err}`
+													: typeof result === "object"
+														? JSON.stringify(result, null, 2)
+														: result,
+											},
+										],
+									};
+									if (err) {
+										addLog("error", `RES <- [${name}] 失败: ${err}`);
+									} else {
+										// 成功时尝试捕获简单的结果预览（如果是字符串或简短对象）
+										let preview = "";
+										if (typeof result === "string") {
+											preview = result.length > 100 ? result.substring(0, 100) + "..." : result;
+										} else if (typeof result === "object") {
+											try {
+												const jsonStr = JSON.stringify(result);
+												preview =
+													jsonStr.length > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
+											} catch (e) {
+												preview = "Object (Circular/Unserializable)";
+											}
 										}
+										addLog("success", `RES <- [${name}] 成功 : ${preview}`);
 									}
-									addLog("success", `RES <- [${name}] 成功 : ${preview}`);
-								}
-								res.writeHead(200);
-								res.end(JSON.stringify(response));
+									res.writeHead(200);
+									res.end(JSON.stringify(response));
+									done(); // 当前指令完成，释放队列给下一个指令
+								});
 							});
 						} catch (e) {
 							if (e instanceof SyntaxError) {
@@ -729,20 +854,20 @@ module.exports = {
 				uri: "cocos://hierarchy",
 				name: "Scene Hierarchy",
 				description: "当前场景层级的 JSON 快照",
-				mimeType: "application/json"
+				mimeType: "application/json",
 			},
 			{
 				uri: "cocos://selection",
 				name: "Current Selection",
 				description: "当前选中节点的 UUID 列表",
-				mimeType: "application/json"
+				mimeType: "application/json",
 			},
 			{
 				uri: "cocos://logs/latest",
 				name: "Editor Logs",
 				description: "最新的编辑器日志 (内存缓存)",
-				mimeType: "text/plain"
-			}
+				mimeType: "text/plain",
+			},
 		];
 	},
 
@@ -807,7 +932,7 @@ module.exports = {
 					path: "name",
 					type: "String",
 					value: args.newName,
-					isSubProp: false
+					isSubProp: false,
 				});
 				callback(null, `节点名称已更新为 ${args.newName}`);
 				break;
@@ -822,12 +947,12 @@ module.exports = {
 				break;
 
 			case "get_scene_hierarchy":
-				Editor.Scene.callSceneScript("mcp-bridge", "get-hierarchy", callback);
+				callSceneScriptWithTimeout("mcp-bridge", "get-hierarchy", null, callback);
 				break;
 
 			case "update_node_transform":
 				// 直接调用场景脚本更新属性，绕过可能导致 "Unknown object" 的复杂 Undo 系统
-				Editor.Scene.callSceneScript("mcp-bridge", "update-node-transform", args, (err, result) => {
+				callSceneScriptWithTimeout("mcp-bridge", "update-node-transform", args, (err, result) => {
 					if (err) {
 						addLog("error", `Transform update failed: ${err}`);
 						callback(err);
@@ -870,14 +995,16 @@ module.exports = {
 
 			case "create_node":
 				if (args.type === "sprite" || args.type === "button") {
-					const splashUuid = Editor.assetdb.urlToUuid("db://internal/image/default_sprite_splash.png/default_sprite_splash");
+					const splashUuid = Editor.assetdb.urlToUuid(
+						"db://internal/image/default_sprite_splash.png/default_sprite_splash",
+					);
 					args.defaultSpriteUuid = splashUuid;
 				}
-				Editor.Scene.callSceneScript("mcp-bridge", "create-node", args, callback);
+				callSceneScriptWithTimeout("mcp-bridge", "create-node", args, callback);
 				break;
 
 			case "manage_components":
-				Editor.Scene.callSceneScript("mcp-bridge", "manage-components", args, callback);
+				callSceneScriptWithTimeout("mcp-bridge", "manage-components", args, callback);
 				break;
 
 			case "manage_script":
@@ -911,7 +1038,7 @@ module.exports = {
 				break;
 
 			case "find_gameobjects":
-				Editor.Scene.callSceneScript("mcp-bridge", "find-gameobjects", args, callback);
+				callSceneScriptWithTimeout("mcp-bridge", "find-gameobjects", args, callback);
 				break;
 
 			case "manage_material":
@@ -953,7 +1080,7 @@ module.exports = {
 			case "manage_vfx":
 				// 【修复】在主进程预先解析 URL 为 UUID，因为渲染进程(scene-script)无法访问 Editor.assetdb
 				if (args.properties && args.properties.file) {
-					if (typeof args.properties.file === 'string' && args.properties.file.startsWith("db://")) {
+					if (typeof args.properties.file === "string" && args.properties.file.startsWith("db://")) {
 						const uuid = Editor.assetdb.urlToUuid(args.properties.file);
 						if (uuid) {
 							args.properties.file = uuid; // 替换为 UUID
@@ -967,7 +1094,7 @@ module.exports = {
 					"db://internal/image/default_sprite_splash",
 					"db://internal/image/default_sprite_splash.png",
 					"db://internal/image/default_particle",
-					"db://internal/image/default_particle.png"
+					"db://internal/image/default_particle.png",
 				];
 
 				for (const path of defaultPaths) {
@@ -983,7 +1110,7 @@ module.exports = {
 					addLog("warn", "[mcp-bridge] Failed to resolve any default sprite UUID.");
 				}
 
-				Editor.Scene.callSceneScript("mcp-bridge", "manage-vfx", args, callback);
+				callSceneScriptWithTimeout("mcp-bridge", "manage-vfx", args, callback);
 				break;
 
 			default:
@@ -1014,7 +1141,7 @@ module.exports = {
 				Editor.assetdb.create(
 					scriptPath,
 					content ||
-					`const { ccclass, property } = cc._decorator;
+						`const { ccclass, property } = cc._decorator;
 
 @ccclass
 export default class NewScript extends cc.Component {
@@ -1097,29 +1224,33 @@ export default class NewScript extends cc.Component {
 	},
 
 	/**
-	 * 批量执行多个 MCP 工具操作
+	 * 批量执行多个 MCP 工具操作（串行链式执行）
+	 * 【重要修复】原并行 forEach 会导致多个 AssetDB 操作同时执行引发编辑器卡死，
+	 * 改为串行执行确保每个操作完成后再执行下一个
 	 * @param {Object} args 参数 (operations 数组)
 	 * @param {Function} callback 完成回调
 	 */
 	batchExecute(args, callback) {
 		const { operations } = args;
 		const results = [];
-		let completed = 0;
 
 		if (!operations || operations.length === 0) {
 			return callback("未提供任何操作指令");
 		}
 
-		operations.forEach((operation, index) => {
+		let index = 0;
+		const next = () => {
+			if (index >= operations.length) {
+				return callback(null, results);
+			}
+			const operation = operations[index];
 			this.handleMcpCall(operation.tool, operation.params, (err, result) => {
 				results[index] = { tool: operation.tool, error: err, result: result };
-				completed++;
-
-				if (completed === operations.length) {
-					callback(null, results);
-				}
+				index++;
+				next();
 			});
-		});
+		};
+		next();
 	},
 
 	/**
@@ -1168,7 +1299,6 @@ export default class NewScript extends cc.Component {
 					callback(err, err ? null : `资源已从 ${path} 移动到 ${targetPath}`);
 				});
 				break;
-
 
 			case "get_info":
 				try {
@@ -1302,9 +1432,9 @@ export default class NewScript extends cc.Component {
 
 				// 解析目标目录和文件名
 				// db://assets/folder/PrefabName.prefab -> db://assets/folder, PrefabName
-				const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf('/'));
-				const fileName = prefabPath.substring(prefabPath.lastIndexOf('/') + 1);
-				const prefabName = fileName.replace('.prefab', '');
+				const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf("/"));
+				const fileName = prefabPath.substring(prefabPath.lastIndexOf("/") + 1);
+				const prefabName = fileName.replace(".prefab", "");
 
 				// 1. 重命名节点以匹配预制体名称
 				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
@@ -1312,7 +1442,7 @@ export default class NewScript extends cc.Component {
 					path: "name",
 					type: "String",
 					value: prefabName,
-					isSubProp: false
+					isSubProp: false,
 				});
 
 				// 2. 发送创建命令 (参数: [uuids], dirPath)
@@ -1342,7 +1472,7 @@ export default class NewScript extends cc.Component {
 				}
 				// 实例化预制体
 				const prefabUuid = Editor.assetdb.urlToUuid(prefabPath);
-				Editor.Scene.callSceneScript(
+				callSceneScriptWithTimeout(
 					"mcp-bridge",
 					"instantiate-prefab",
 					{
@@ -1402,7 +1532,7 @@ export default class NewScript extends cc.Component {
 				break;
 			case "refresh_editor":
 				// 刷新编辑器
-				const refreshPath = (properties && properties.path) ? properties.path : 'db://assets/scripts';
+				const refreshPath = properties && properties.path ? properties.path : "db://assets/scripts";
 				Editor.assetdb.refresh(refreshPath, (err) => {
 					if (err) {
 						addLog("error", `刷新失败: ${err}`);
@@ -1559,11 +1689,11 @@ CCProgram fs %{
 					_effectAsset: properties.shaderUuid ? { __uuid__: properties.shaderUuid } : null,
 					_techniqueIndex: 0,
 					_techniqueData: {
-						"0": {
+						0: {
 							defines: properties.defines || {},
-							props: properties.uniforms || {}
-						}
-					}
+							props: properties.uniforms || {},
+						},
+					},
 				};
 
 				Editor.assetdb.create(matPath, JSON.stringify(materialData, null, 2), (err) => {
@@ -1654,11 +1784,12 @@ CCProgram fs %{
 				}
 
 				// 1. 准备文件内容 (优先使用 properties.content，否则使用默认 1x1)
-				let base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+				let base64Data =
+					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 				if (properties && properties.content) {
 					base64Data = properties.content;
 				}
-				const buffer = Buffer.from(base64Data, 'base64');
+				const buffer = Buffer.from(base64Data, "base64");
 
 				try {
 					// 2. 写入物理文件
@@ -1687,7 +1818,7 @@ CCProgram fs %{
 									// 注意：Cocos 2.4 纹理 Meta 中 subMetas 下通常有一个与纹理同名的 key (或者主要的一个 key)
 									if (properties.border) {
 										// 确保类型是 sprite
-										meta.type = 'sprite';
+										meta.type = "sprite";
 
 										// 找到 SpriteFrame 的 subMeta
 										const subKeys = Object.keys(meta.subMetas);
@@ -1772,8 +1903,8 @@ CCProgram fs %{
 					// 更新 9-slice border
 					if (properties.border) {
 						// 确保类型是 sprite
-						if (meta.type !== 'sprite') {
-							meta.type = 'sprite';
+						if (meta.type !== "sprite") {
+							meta.type = "sprite";
 							changed = true;
 						}
 
@@ -1790,11 +1921,13 @@ CCProgram fs %{
 							// 方式 1: standard array style
 							if (subMeta.border !== undefined) {
 								const oldBorder = subMeta.border;
-								if (!oldBorder ||
+								if (
+									!oldBorder ||
 									oldBorder[0] !== newBorder[0] ||
 									oldBorder[1] !== newBorder[1] ||
 									oldBorder[2] !== newBorder[2] ||
-									oldBorder[3] !== newBorder[3]) {
+									oldBorder[3] !== newBorder[3]
+								) {
 									subMeta.border = newBorder;
 									changed = true;
 								}
@@ -1802,11 +1935,12 @@ CCProgram fs %{
 							// 方式 2: individual fields style (common in 2.3.x)
 							else if (subMeta.borderTop !== undefined) {
 								// top, bottom, left, right
-								if (subMeta.borderTop !== newBorder[0] ||
+								if (
+									subMeta.borderTop !== newBorder[0] ||
 									subMeta.borderBottom !== newBorder[1] ||
 									subMeta.borderLeft !== newBorder[2] ||
-									subMeta.borderRight !== newBorder[3]) {
-
+									subMeta.borderRight !== newBorder[3]
+								) {
 									subMeta.borderTop = newBorder[0];
 									subMeta.borderBottom = newBorder[1];
 									subMeta.borderLeft = newBorder[2];
@@ -1842,7 +1976,6 @@ CCProgram fs %{
 				break;
 		}
 	},
-
 
 	/**
 	 * 对文件应用一系列精确的文本编辑操作
@@ -1881,9 +2014,7 @@ CCProgram fs %{
 				switch (edit.type) {
 					case "insert":
 						updatedContent =
-							updatedContent.slice(0, edit.position) +
-							edit.text +
-							updatedContent.slice(edit.position);
+							updatedContent.slice(0, edit.position) + edit.text + updatedContent.slice(edit.position);
 						break;
 					case "delete":
 						updatedContent = updatedContent.slice(0, edit.start) + updatedContent.slice(edit.end);
@@ -1903,7 +2034,6 @@ CCProgram fs %{
 				if (err) addLog("warn", `刷新失败 ${filePath}: ${err}`);
 				callback(null, `文本编辑已应用: ${filePath}`);
 			});
-
 		} catch (err) {
 			callback(`操作失败: ${err.message}`);
 		}
@@ -1937,21 +2067,21 @@ CCProgram fs %{
 		// 菜单项映射表 (Cocos Creator 2.4.x IPC)
 		// 参考: IPC_MESSAGES.md
 		const menuMap = {
-			'File/New Scene': 'scene:new-scene',
-			'File/Save Scene': 'scene:stash-and-save',
-			'File/Save': 'scene:stash-and-save', // 别名
-			'Edit/Undo': 'scene:undo',
-			'Edit/Redo': 'scene:redo',
-			'Edit/Delete': 'scene:delete-nodes',
-			'Delete': 'scene:delete-nodes',
-			'delete': 'scene:delete-nodes',
+			"File/New Scene": "scene:new-scene",
+			"File/Save Scene": "scene:stash-and-save",
+			"File/Save": "scene:stash-and-save", // 别名
+			"Edit/Undo": "scene:undo",
+			"Edit/Redo": "scene:redo",
+			"Edit/Delete": "scene:delete-nodes",
+			Delete: "scene:delete-nodes",
+			delete: "scene:delete-nodes",
 		};
 
 		// 特殊处理 delete-node:UUID 格式
 		if (menuPath.startsWith("delete-node:")) {
 			const uuid = menuPath.split(":")[1];
 			if (uuid) {
-				Editor.Scene.callSceneScript('mcp-bridge', 'delete-node', { uuid }, (err, result) => {
+				callSceneScriptWithTimeout("mcp-bridge", "delete-node", { uuid }, (err, result) => {
 					if (err) callback(err);
 					else callback(null, result || `Node ${uuid} deleted via scene script`);
 				});
@@ -1963,7 +2093,7 @@ CCProgram fs %{
 			const ipcMsg = menuMap[menuPath];
 			try {
 				// 获取当前选中的节点进行删除（如果该消息是删除操作）
-				if (ipcMsg === 'scene:delete-nodes') {
+				if (ipcMsg === "scene:delete-nodes") {
 					const selection = Editor.Selection.curSelection("node");
 					if (selection.length > 0) {
 						Editor.Ipc.sendToMain(ipcMsg, selection);
@@ -1987,7 +2117,7 @@ CCProgram fs %{
 			try {
 				// 注意：Cocos Creator 2.x 的 menu:click 通常需要 Electron 菜单 ID，而不只是路径
 				// 这里做个尽力而为的尝试
-				Editor.Ipc.sendToMain('menu:click', menuPath);
+				Editor.Ipc.sendToMain("menu:click", menuPath);
 				callback(null, `通用菜单动作已发送: ${menuPath} (仅支持项保证成功)`);
 			} catch (e) {
 				callback(`执行菜单项失败: ${menuPath}`);
@@ -2036,11 +2166,23 @@ CCProgram fs %{
 				// 这里暂时只做简单的括号匹配检查或直接通过，但给出一个 Warning
 
 				// 检查是否有 class 定义 (简单的启发式检查)
-				if (!content.includes('class ') && !content.includes('interface ') && !content.includes('enum ') && !content.includes('export ')) {
-					return callback(null, { valid: true, message: "警告: TypeScript 文件似乎缺少标准定义 (class/interface/export)，但由于缺少编译器，已跳过基础语法检查。" });
+				if (
+					!content.includes("class ") &&
+					!content.includes("interface ") &&
+					!content.includes("enum ") &&
+					!content.includes("export ")
+				) {
+					return callback(null, {
+						valid: true,
+						message:
+							"警告: TypeScript 文件似乎缺少标准定义 (class/interface/export)，但由于缺少编译器，已跳过基础语法检查。",
+					});
 				}
 
-				callback(null, { valid: true, message: "TypeScript 基础检查通过。(完整编译验证需要通过编辑器构建流程)" });
+				callback(null, {
+					valid: true,
+					message: "TypeScript 基础检查通过。(完整编译验证需要通过编辑器构建流程)",
+				});
 			} else {
 				callback(null, { valid: true, message: "未知的脚本类型，跳过验证。" });
 			}
@@ -2122,7 +2264,11 @@ CCProgram fs %{
 					const str = func.toString();
 					const match = str.match(/function\s.*?\(([^)]*)\)/) || str.match(/.*?\(([^)]*)\)/);
 					if (match) {
-						return match[1].split(",").map(arg => arg.trim()).filter(a => a).join(", ");
+						return match[1]
+							.split(",")
+							.map((arg) => arg.trim())
+							.filter((a) => a)
+							.join(", ");
 					}
 					return `${func.length} args`;
 				} catch (e) {
@@ -2137,18 +2283,21 @@ CCProgram fs %{
 				const proto = Object.getPrototypeOf(obj);
 
 				// 组合自身属性和原型属性
-				const allKeys = new Set([...Object.getOwnPropertyNames(obj), ...Object.getOwnPropertyNames(proto || {})]);
+				const allKeys = new Set([
+					...Object.getOwnPropertyNames(obj),
+					...Object.getOwnPropertyNames(proto || {}),
+				]);
 
-				allKeys.forEach(key => {
+				allKeys.forEach((key) => {
 					if (key.startsWith("_")) return; // 跳过私有属性
 					try {
 						const val = obj[key];
-						if (typeof val === 'function') {
+						if (typeof val === "function") {
 							props[key] = `func(${getArgs(val)})`;
 						} else {
 							props[key] = typeof val;
 						}
-					} catch (e) { }
+					} catch (e) {}
 				});
 				return { name, exists: true, props };
 			};
@@ -2161,11 +2310,11 @@ CCProgram fs %{
 				"Editor.Panel": Editor.Panel,
 				"Editor.Scene": Editor.Scene,
 				"Editor.Utils": Editor.Utils,
-				"Editor.remote": Editor.remote
+				"Editor.remote": Editor.remote,
 			};
 
 			const report = {};
-			Object.keys(standardObjects).forEach(key => {
+			Object.keys(standardObjects).forEach((key) => {
 				report[key] = inspectObj(key, standardObjects[key]);
 			});
 
@@ -2184,11 +2333,11 @@ CCProgram fs %{
 				"Editor.Selection.select",
 				"Editor.Selection.clear",
 				"Editor.Selection.curSelection",
-				"Editor.Selection.curGlobalActivate"
+				"Editor.Selection.curGlobalActivate",
 			];
 
 			const checklistResults = {};
-			forumChecklist.forEach(path => {
+			forumChecklist.forEach((path) => {
 				const parts = path.split(".");
 				let curr = global; // 在主进程中，Editor 是全局的
 				let exists = true;
@@ -2200,7 +2349,11 @@ CCProgram fs %{
 						break;
 					}
 				}
-				checklistResults[path] = exists ? (typeof curr === 'function' ? `Available(${getArgs(curr)})` : "Available") : "Missing";
+				checklistResults[path] = exists
+					? typeof curr === "function"
+						? `Available(${getArgs(curr)})`
+						: "Available"
+					: "Missing";
 			});
 
 			addLog("info", `[API Inspector] Standard Objects:\n${JSON.stringify(report, null, 2)}`);
@@ -2211,7 +2364,7 @@ CCProgram fs %{
 			const builtinPackages = ["scene", "builder", "assets"]; // 核心内置包
 			const fs = require("fs");
 
-			builtinPackages.forEach(pkgName => {
+			builtinPackages.forEach((pkgName) => {
 				try {
 					const pkgPath = Editor.url(`packages://${pkgName}/package.json`);
 					if (pkgPath && fs.existsSync(pkgPath)) {
@@ -2232,8 +2385,6 @@ CCProgram fs %{
 			addLog("info", `[API Inspector] Built-in IPC Messages:\n${JSON.stringify(ipcReport, null, 2)}`);
 		},
 	},
-
-
 
 	// 全局文件搜索
 	// 项目搜索 (升级版 find_in_file)
@@ -2276,7 +2427,15 @@ CCProgram fs %{
 					if (results.length >= MAX_RESULTS) return;
 
 					// 忽略隐藏文件和常用忽略目录
-					if (file.startsWith('.') || file === 'node_modules' || file === 'bin' || file === 'local' || file === 'library' || file === 'temp') return;
+					if (
+						file.startsWith(".") ||
+						file === "node_modules" ||
+						file === "bin" ||
+						file === "local" ||
+						file === "library" ||
+						file === "temp"
+					)
+						return;
 
 					const filePath = pathModule.join(dir, file);
 					const stat = fs.statSync(filePath);
@@ -2285,12 +2444,15 @@ CCProgram fs %{
 						// 目录名搜索
 						if (mode === "dir_name") {
 							if (checkMatch(file)) {
-								const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
-								const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+								const relativePath = pathModule.relative(
+									Editor.assetdb.urlToFspath("db://assets"),
+									filePath,
+								);
+								const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join("/");
 								results.push({
 									filePath: dbPath,
 									type: "directory",
-									name: file
+									name: file,
 								});
 							}
 						}
@@ -2314,12 +2476,15 @@ CCProgram fs %{
 							// 简化逻辑：对文件名搜索，也检查后缀（如果用户未传则用默认列表）
 							if (validExtensions.includes(ext)) {
 								if (checkMatch(file)) {
-									const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
-									const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+									const relativePath = pathModule.relative(
+										Editor.assetdb.urlToFspath("db://assets"),
+										filePath,
+									);
+									const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join("/");
 									results.push({
 										filePath: dbPath,
 										type: "file",
-										name: file
+										name: file,
 									});
 								}
 							}
@@ -2330,17 +2495,21 @@ CCProgram fs %{
 						else if (mode === "content") {
 							if (validExtensions.includes(ext)) {
 								try {
-									const content = fs.readFileSync(filePath, 'utf8');
-									const lines = content.split('\n');
+									const content = fs.readFileSync(filePath, "utf8");
+									const lines = content.split("\n");
 									lines.forEach((line, index) => {
 										if (results.length >= MAX_RESULTS) return;
 										if (checkMatch(line)) {
-											const relativePath = pathModule.relative(Editor.assetdb.urlToFspath("db://assets"), filePath);
-											const dbPath = "db://assets/" + relativePath.split(pathModule.sep).join('/');
+											const relativePath = pathModule.relative(
+												Editor.assetdb.urlToFspath("db://assets"),
+												filePath,
+											);
+											const dbPath =
+												"db://assets/" + relativePath.split(pathModule.sep).join("/");
 											results.push({
 												filePath: dbPath,
 												line: index + 1,
-												content: line.trim()
+												content: line.trim(),
 											});
 										}
 									});
@@ -2412,9 +2581,9 @@ CCProgram fs %{
 
 		try {
 			const fileBuffer = fs.readFileSync(fspath);
-			const hashSum = crypto.createHash('sha256');
+			const hashSum = crypto.createHash("sha256");
 			hashSum.update(fileBuffer);
-			const sha = hashSum.digest('hex');
+			const sha = hashSum.digest("hex");
 			callback(null, { path: url, sha: sha });
 		} catch (err) {
 			callback(`计算 SHA 失败: ${err.message}`);
@@ -2424,6 +2593,6 @@ CCProgram fs %{
 	// 管理动画
 	manageAnimation(args, callback) {
 		// 转发给场景脚本处理
-		Editor.Scene.callSceneScript("mcp-bridge", "manage-animation", args, callback);
+		callSceneScriptWithTimeout("mcp-bridge", "manage-animation", args, callback);
 	},
 };
