@@ -254,6 +254,20 @@ const getToolsList = () => {
 			},
 		},
 		{
+			name: "open_prefab",
+			description: `${globalPrecautions} 在编辑器中打开预制体文件进入编辑模式。注意：这是一个异步操作，打开后请等待几秒。`,
+			inputSchema: {
+				type: "object",
+				properties: {
+					url: {
+						type: "string",
+						description: "预制体资源路径，如 db://assets/prefabs/Test.prefab",
+					},
+				},
+				required: ["url"],
+			},
+		},
+		{
 			name: "create_node",
 			description: `${globalPrecautions} 在当前场景中创建一个新节点。重要提示：1. 如果指定 parentId，必须先通过 get_scene_hierarchy 确保该父节点真实存在且未被删除。2. 类型说明：'sprite' (100x100 尺寸 + 默认贴图), 'button' (150x50 尺寸 + 深色底图 + Button组件), 'label' (120x40 尺寸 + Label组件), 'empty' (纯空节点)。`,
 			inputSchema: {
@@ -842,6 +856,9 @@ module.exports = {
 		}
 	},
 
+	/**
+	 * 关闭 HTTP 服务器
+	 */
 	stopServer() {
 		if (mcpServer) {
 			mcpServer.close();
@@ -852,6 +869,10 @@ module.exports = {
 		}
 	},
 
+	/**
+	 * 获取 MCP 资源列表
+	 * @returns {Array<Object>} 资源列表数组
+	 */
 	getResourcesList() {
 		return [
 			{
@@ -875,6 +896,11 @@ module.exports = {
 		];
 	},
 
+	/**
+	 * 读取指定的 MCP 资源内容
+	 * @param {string} uri 资源统一资源标识符 (URI)
+	 * @param {Function} callback 完成回调 (err, content)
+	 */
 	handleReadResource(uri, callback) {
 		let parsed;
 		try {
@@ -990,6 +1016,22 @@ module.exports = {
 					setTimeout(() => {
 						isSceneBusy = false;
 						callback(null, `成功：正在打开场景 ${args.url}`);
+					}, 2000);
+				} else {
+					isSceneBusy = false;
+					callback(`找不到路径为 ${args.url} 的资源`);
+				}
+				break;
+
+			case "open_prefab":
+				isSceneBusy = true; // 锁定
+				const prefabUuid = Editor.assetdb.urlToUuid(args.url);
+				if (prefabUuid) {
+					// 【核心修复】使用正确的 IPC 消息进入预制体编辑模式
+					Editor.Ipc.sendToAll("scene:enter-prefab-edit-mode", prefabUuid);
+					setTimeout(() => {
+						isSceneBusy = false;
+						callback(null, `成功：正在打开预制体 ${args.url}`);
 					}, 2000);
 				} else {
 					isSceneBusy = false;
@@ -1432,11 +1474,11 @@ export default class NewScript extends cc.Component {
 				const dirPath = pathModule.dirname(absolutePath);
 				if (!fs.existsSync(dirPath)) {
 					fs.mkdirSync(dirPath, { recursive: true });
+					// 【增强】确保 AssetDB 刷新文件夹，防止场景脚本找不到目标目录
+					Editor.assetdb.refresh(targetDir);
 				}
 
 				// 解析目标目录和文件名
-				// db://assets/folder/PrefabName.prefab -> db://assets/folder, PrefabName
-				const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf("/"));
 				const fileName = prefabPath.substring(prefabPath.lastIndexOf("/") + 1);
 				const prefabName = fileName.replace(".prefab", "");
 
@@ -1451,9 +1493,10 @@ export default class NewScript extends cc.Component {
 
 				// 2. 发送创建命令 (参数: [uuids], dirPath)
 				// 注意: scene:create-prefab 第三个参数必须是 db:// 目录路径
+				// 【增强】增加延迟到 300ms，确保 IPC 消息处理并同步到底层引擎
 				setTimeout(() => {
 					Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [nodeId], targetDir);
-				}, 100); // 稍微延迟以确保重命名生效
+				}, 300);
 
 				callback(null, `指令已发送: 从节点 ${nodeId} 在目录 ${targetDir} 创建名为 ${prefabName} 的预制体`);
 				break;
@@ -1472,7 +1515,7 @@ export default class NewScript extends cc.Component {
 
 			case "instantiate":
 				if (!Editor.assetdb.exists(prefabPath)) {
-					return callback(`Prefab not found at ${prefabPath}`);
+					return callback(`路径为 ${prefabPath} 的预制体不存在`);
 				}
 				// 实例化预制体
 				const prefabUuid = Editor.assetdb.urlToUuid(prefabPath);
@@ -2066,6 +2109,11 @@ CCProgram fs %{
 		callback(null, filteredOutput);
 	},
 
+	/**
+	 * 执行编辑器菜单项
+	 * @param {Object} args 参数 (menuPath)
+	 * @param {Function} callback 完成回调
+	 */
 	executeMenuItem(args, callback) {
 		const { menuPath } = args;
 		if (!menuPath) {
@@ -2092,7 +2140,7 @@ CCProgram fs %{
 			if (uuid) {
 				callSceneScriptWithTimeout("mcp-bridge", "delete-node", { uuid }, (err, result) => {
 					if (err) callback(err);
-					else callback(null, result || `Node ${uuid} deleted via scene script`);
+					else callback(null, result || `节点 ${uuid} 已通过场景脚本删除`);
 				});
 				return;
 			}
@@ -2120,7 +2168,7 @@ CCProgram fs %{
 		} else {
 			// 对于未在映射表中的菜单，尝试通用的 menu:click (虽然不一定有效)
 			// 或者直接返回不支持的警告
-			addLog("warn", `支持映射表中找不到菜单项 '${menuPath}'。尝试通过 legacy 模式执行。`);
+			addLog("warn", `支持映射表中找不到菜单项 '${menuPath}'。尝试通过旧版模式执行。`);
 
 			// 尝试通用调用
 			try {
@@ -2134,7 +2182,11 @@ CCProgram fs %{
 		}
 	},
 
-	// 验证脚本
+	/**
+	 * 验证脚本文件的语法或基础结构
+	 * @param {Object} args 参数 (filePath)
+	 * @param {Function} callback 完成回调
+	 */
 	validateScript(args, callback) {
 		const { filePath } = args;
 
@@ -2265,7 +2317,7 @@ CCProgram fs %{
 		},
 
 		"inspect-apis"() {
-			addLog("info", "[API Inspector] Starting DEEP inspection...");
+			addLog("info", "[API 检查器] 开始深度分析...");
 
 			// 获取函数参数的辅助函数
 			const getArgs = (func) => {
@@ -2365,8 +2417,8 @@ CCProgram fs %{
 					: "Missing";
 			});
 
-			addLog("info", `[API Inspector] Standard Objects:\n${JSON.stringify(report, null, 2)}`);
-			addLog("info", `[API Inspector] Forum Checklist:\n${JSON.stringify(checklistResults, null, 2)}`);
+			addLog("info", `[API 检查器] 标准对象:\n${JSON.stringify(report, null, 2)}`);
+			addLog("info", `[API 检查器] 论坛核查清单:\n${JSON.stringify(checklistResults, null, 2)}`);
 
 			// 3. 检查内置包 IPC 消息
 			const ipcReport = {};
@@ -2391,12 +2443,15 @@ CCProgram fs %{
 				}
 			});
 
-			addLog("info", `[API Inspector] Built-in IPC Messages:\n${JSON.stringify(ipcReport, null, 2)}`);
+			addLog("info", `[API 检查器] 内置包 IPC 消息:\n${JSON.stringify(ipcReport, null, 2)}`);
 		},
 	},
 
-	// 全局文件搜索
-	// 项目搜索 (升级版 find_in_file)
+	/**
+	 * 全局项目文件搜索 (支持正则表达式、文件名、目录名搜索)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	searchProject(args, callback) {
 		const { query, useRegex, path: searchPath, matchType, extensions } = args;
 
@@ -2405,7 +2460,7 @@ CCProgram fs %{
 		const rootPath = Editor.assetdb.urlToFspath(rootPathUrl);
 
 		if (!rootPath || !fs.existsSync(rootPath)) {
-			return callback(`Invalid search path: ${rootPathUrl}`);
+			return callback(`无效的搜索路径: ${rootPathUrl}`);
 		}
 
 		const mode = matchType || "content"; // content, file_name, dir_name
@@ -2534,11 +2589,15 @@ CCProgram fs %{
 			walk(rootPath);
 			callback(null, results);
 		} catch (err) {
-			callback(`Search project failed: ${err.message}`);
+			callback(`项目搜索失败: ${err.message}`);
 		}
 	},
 
-	// 管理撤销/重做
+	/**
+	 * 管理撤销/重做操作及事务分组
+	 * @param {Object} args 参数 (action, description, id)
+	 * @param {Function} callback 完成回调
+	 */
 	manageUndo(args, callback) {
 		const { action, description } = args;
 
@@ -2546,16 +2605,13 @@ CCProgram fs %{
 			switch (action) {
 				case "undo":
 					Editor.Ipc.sendToPanel("scene", "scene:undo");
-					callback(null, "Undo command executed");
+					callback(null, "撤销指令已执行");
 					break;
 				case "redo":
 					Editor.Ipc.sendToPanel("scene", "scene:redo");
-					callback(null, "Redo command executed");
+					callback(null, "重做指令已执行");
 					break;
 				case "begin_group":
-					// scene:undo-record [id]
-					// 注意：在 2.4.x 中，undo-record 通常需要一个有效的 uuid
-					// 如果没有提供 uuid，不应将 description 作为 ID 发送，否则会报 Unknown object to record
 					addLog("info", `开始撤销组: ${description || "MCP 动作"}`);
 					// 如果有参数包含 id，则记录该节点
 					if (args.id) {
@@ -2565,27 +2621,31 @@ CCProgram fs %{
 					break;
 				case "end_group":
 					Editor.Ipc.sendToPanel("scene", "scene:undo-commit");
-					callback(null, "Undo group committed");
+					callback(null, "撤销组已提交");
 					break;
 				case "cancel_group":
 					Editor.Ipc.sendToPanel("scene", "scene:undo-cancel");
-					callback(null, "Undo group cancelled");
+					callback(null, "撤销组已取消");
 					break;
 				default:
-					callback(`Unknown undo action: ${action}`);
+					callback(`未知的撤销操作: ${action}`);
 			}
 		} catch (err) {
-			callback(`Undo operation failed: ${err.message}`);
+			callback(`撤销操作失败: ${err.message}`);
 		}
 	},
 
-	// 获取文件 SHA-256
+	/**
+	 * 计算资源的 SHA-256 哈希值
+	 * @param {Object} args 参数 (path)
+	 * @param {Function} callback 完成回调
+	 */
 	getSha(args, callback) {
 		const { path: url } = args;
 		const fspath = Editor.assetdb.urlToFspath(url);
 
 		if (!fspath || !fs.existsSync(fspath)) {
-			return callback(`File not found: ${url}`);
+			return callback(`找不到文件: ${url}`);
 		}
 
 		try {
@@ -2599,7 +2659,11 @@ CCProgram fs %{
 		}
 	},
 
-	// 管理动画
+	/**
+	 * 管理节点动画 (播放、停止、获取信息等)
+	 * @param {Object} args 参数
+	 * @param {Function} callback 完成回调
+	 */
 	manageAnimation(args, callback) {
 		// 转发给场景脚本处理
 		callSceneScriptWithTimeout("mcp-bridge", "manage-animation", args, callback);

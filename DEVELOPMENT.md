@@ -37,26 +37,26 @@ mcp-bridge/
 
 ```json
 {
-  "name": "mcp-bridge",
-  "version": "1.0.0",
-  "description": "MCP Bridge for Cocos Creator",
-  "main": "main.js",
-  "panel": {
-    "main": "panel/index.html",
-    "type": "dockable",
-    "title": "MCP Bridge",
-    "width": 800,
-    "height": 600
-  },
-  "contributions": {
-    "menu": [
-      {
-        "path": "Packages/MCP Bridge",
-        "label": "Open Test Panel",
-        "message": "open-test-panel"
-      }
-    ]
-  }
+	"name": "mcp-bridge",
+	"version": "1.0.0",
+	"description": "MCP Bridge for Cocos Creator",
+	"main": "main.js",
+	"panel": {
+		"main": "panel/index.html",
+		"type": "dockable",
+		"title": "MCP Bridge",
+		"width": 800,
+		"height": 600
+	},
+	"contributions": {
+		"menu": [
+			{
+				"path": "Packages/MCP Bridge",
+				"label": "Open Test Panel",
+				"message": "open-test-panel"
+			}
+		]
+	}
 }
 ```
 
@@ -104,10 +104,17 @@ startServer(port) {
 ## 4. 开发历程与里程碑
 
 ### 2026-02-10: Undo 系统深度修复与规范化
+
 - **问题分析**: 修复了 `TypeError: Cannot read property '_name' of null`。该错误是由于直接修改节点属性（绕过 Undo 系统）与分组事务混用导致的。
 - **重构要点**: 将 `update-node-transform` 中所有的直接赋值替换为 `scene:set-property` IPC 调用，确保所有变换修改均受撤销系统监控。
 - **缺陷修正**: 修复了 `manage_undo` 在 `begin_group` 时传递错误参数导致 "Unknown object to record" 的问题。
 - **全量汉化与文档同步**: 完成了 `main.js` 和 `scene-script.js` 的 100% 简体中文翻译。同步更新了 `README.md`、`DEVELOPMENT.md` 及 `注意事项.md`。
+
+### 2026-02-13: 新增 `open_prefab` 功能与消息协议修正
+
+- **需求实现**: 新增 `open_prefab` 工具，允许 AI 直接打开预制体进入编辑模式。
+- **协议修正**: 经过测试对比，最终确认使用 `scene:enter-prefab-edit-mode` 消息并配合 `Editor.Ipc.sendToAll` 是进入预制体编辑模式的最佳方案，解决了 `scene:open-by-uuid` 无法触发编辑状态的问题。
+- **文档深度补全**: 遵循全局开发规范，同步更新了所有技术文档，确保 100% 简体中文覆盖及详尽的 JSDoc 注释。
 
 ### 3.2 MCP 工具注册
 
@@ -115,12 +122,12 @@ startServer(port) {
 
 ```javascript
 const tools = [
-    {
-        name: "get_selected_node",
-        description: "获取当前选中的节点",
-        parameters: []
-    },
-    // 其他工具...
+	{
+		name: "get_selected_node",
+		description: "获取当前选中的节点",
+		parameters: [],
+	},
+	// 其他工具...
 ];
 ```
 
@@ -130,13 +137,13 @@ const tools = [
 
 ```javascript
 const sceneScript = {
-    'create-node'(params, callback) {
-        // 创建节点逻辑...
-    },
-    'set-property'(params, callback) {
-        // 设置属性逻辑...
-    },
-    // 其他操作...
+	"create-node"(params, callback) {
+		// 创建节点逻辑...
+	},
+	"set-property"(params, callback) {
+		// 设置属性逻辑...
+	},
+	// 其他操作...
 };
 ```
 
@@ -238,33 +245,33 @@ manageAsset(args, callback) {
 
 ```html
 <div class="mcp-container">
-    <!-- 标签页 -->
-    <div class="tabs">
-        <ui-button id="tabMain" class="tab-button active">Main</ui-button>
-        <ui-button id="tabTest" class="tab-button">Tool Test</ui-button>
-    </div>
+	<!-- 标签页 -->
+	<div class="tabs">
+		<ui-button id="tabMain" class="tab-button active">Main</ui-button>
+		<ui-button id="tabTest" class="tab-button">Tool Test</ui-button>
+	</div>
 
-    <!-- 主面板内容 -->
-    <div id="panelMain" class="tab-content active">
-        <!-- 主面板内容... -->
-    </div>
+	<!-- 主面板内容 -->
+	<div id="panelMain" class="tab-content active">
+		<!-- 主面板内容... -->
+	</div>
 
-    <!-- 测试面板内容 -->
-    <div id="panelTest" class="tab-content">
-        <div class="test-container">
-            <div class="test-layout">
-                <!-- 左侧工具列表 -->
-                <div class="left-panel">
-                    <!-- 工具列表... -->
-                </div>
-                
-                <!-- 右侧输入输出 -->
-                <div class="right-panel">
-                    <!-- 输入输出区域... -->
-                </div>
-            </div>
-        </div>
-    </div>
+	<!-- 测试面板内容 -->
+	<div id="panelTest" class="tab-content">
+		<div class="test-container">
+			<div class="test-layout">
+				<!-- 左侧工具列表 -->
+				<div class="left-panel">
+					<!-- 工具列表... -->
+				</div>
+
+				<!-- 右侧输入输出 -->
+				<div class="right-panel">
+					<!-- 输入输出区域... -->
+				</div>
+			</div>
+		</div>
+	</div>
 </div>
 ```
 
@@ -283,6 +290,7 @@ manageAsset(args, callback) {
 **错误信息**：`Panel info not found for panel mcp-bridge`
 
 **解决方案**：
+
 - 检查 `package.json` 中的面板配置
 - 确保 `panel` 字段配置正确，移除冲突的 `panels` 字段
 
@@ -291,6 +299,7 @@ manageAsset(args, callback) {
 **错误信息**：`Parent path ... is not exists`
 
 **解决方案**：
+
 - 在创建资源前添加目录检查和创建逻辑
 - 使用 `fs.mkdirSync(dirPath, { recursive: true })` 递归创建目录
 
@@ -299,6 +308,7 @@ manageAsset(args, callback) {
 **错误信息**：`SyntaxError: Invalid or unexpected token`
 
 **解决方案**：
+
 - 使用模板字符串（反引号）处理多行字符串
 - 避免变量名冲突
 
@@ -321,6 +331,7 @@ manageAsset(args, callback) {
 ### 5.2 API 文档
 
 为每个 MCP 工具编写详细的 API 文档，包括：
+
 - 工具名称
 - 功能描述
 - 参数说明
@@ -344,17 +355,17 @@ manageAsset(args, callback) {
 ### 6.2 使用流程
 
 1. **启动服务**：
-   - 打开 Cocos Creator 编辑器
-   - 选择 `Packages/MCP Bridge/Open Test Panel`
-   - 点击 "Start" 按钮启动服务
+    - 打开 Cocos Creator 编辑器
+    - 选择 `Packages/MCP Bridge/Open Test Panel`
+    - 点击 "Start" 按钮启动服务
 
 2. **连接 AI 编辑器**：
-   - 在 AI 编辑器中配置 MCP 代理
-   - 使用 `node [项目路径]/packages/mcp-bridge/mcp-proxy.js` 作为命令
+    - 在 AI 编辑器中配置 MCP 代理
+    - 使用 `node [项目路径]/packages/mcp-bridge/mcp-proxy.js` 作为命令
 
 3. **执行操作**：
-   - 通过 AI 编辑器发送 MCP 请求
-   - 或在测试面板中直接测试工具
+    - 通过 AI 编辑器发送 MCP 请求
+    - 或在测试面板中直接测试工具
 
 ### 6.3 配置选项
 
@@ -366,30 +377,30 @@ manageAsset(args, callback) {
 ### 7.1 添加新工具
 
 1. **在 `main.js` 中注册工具**：
-   - 在 `/list-tools` 响应中添加工具定义
-   - 在 `handleMcpCall` 函数中添加处理逻辑
+    - 在 `/list-tools` 响应中添加工具定义
+    - 在 `handleMcpCall` 函数中添加处理逻辑
 
 2. **在面板中添加示例**：
-   - 在 `panel/index.js` 中添加工具示例参数
-   - 更新工具列表
+    - 在 `panel/index.js` 中添加工具示例参数
+    - 更新工具列表
 
 3. **更新文档**：
-   - 在 `README.md` 中添加工具文档
-   - 更新功能特性列表
+    - 在 `README.md` 中添加工具文档
+    - 更新功能特性列表
 
 ### 7.2 集成新 API
 
 1. **了解 Cocos Creator API**：
-   - 查阅 Cocos Creator 编辑器 API 文档
-   - 了解场景脚本 API
+    - 查阅 Cocos Creator 编辑器 API 文档
+    - 了解场景脚本 API
 
 2. **实现集成**：
-   - 在 `main.js` 或 `scene-script.js` 中添加对应功能
-   - 处理异步操作和错误情况
+    - 在 `main.js` 或 `scene-script.js` 中添加对应功能
+    - 处理异步操作和错误情况
 
 3. **测试验证**：
-   - 编写测试用例
-   - 验证功能正确性
+    - 编写测试用例
+    - 验证功能正确性
 
 ## 8. 版本管理
 
@@ -416,69 +427,69 @@ manageAsset(args, callback) {
 ## 10. 最佳实践
 
 1. **代码组织**：
-   - 模块化设计，职责分离
-   - 合理使用回调函数处理异步操作
+    - 模块化设计，职责分离
+    - 合理使用回调函数处理异步操作
 
 2. **错误处理**：
-   - 完善的错误捕获和处理
-   - 详细的错误日志记录
+    - 完善的错误捕获和处理
+    - 详细的错误日志记录
 
 3. **用户体验**：
-   - 直观的面板界面
-   - 实时的操作反馈
-   - 详细的日志信息
+    - 直观的面板界面
+    - 实时的操作反馈
+    - 详细的日志信息
 
 4. **安全性**：
-   - 验证输入参数
-   - 防止路径遍历攻击
-   - 限制服务访问范围
+    - 验证输入参数
+    - 防止路径遍历攻击
+    - 限制服务访问范围
 
 ## 11. 开发路线图 (Roadmap)
 
 ### 11.1 第三阶段开发计划（已完成）
 
-| 任务 | 状态 | 描述 |
-|------|------|------|
-| 编辑器管理工具实现 | ✅ 完成 | 实现 manage_editor 工具，支持编辑器状态控制和操作执行 |
-| 游戏对象查找工具实现 | ✅ 完成 | 实现 find_gameobjects 工具，支持根据条件查找场景节点 |
+| 任务                   | 状态    | 描述                                                                |
+| ---------------------- | ------- | ------------------------------------------------------------------- |
+| 编辑器管理工具实现     | ✅ 完成 | 实现 manage_editor 工具，支持编辑器状态控制和操作执行               |
+| 游戏对象查找工具实现   | ✅ 完成 | 实现 find_gameobjects 工具，支持根据条件查找场景节点                |
 | 材质和纹理管理工具实现 | ✅ 完成 | 实现 manage_material 和 manage_texture 工具，支持材质和纹理资源管理 |
-| 菜单项执行工具实现 | ✅ 完成 | 实现 execute_menu_item 工具，支持执行 Cocos Creator 菜单项 |
-| 代码编辑增强工具实现 | ✅ 完成 | 实现 apply_text_edits 工具，支持文本编辑操作应用 |
-| 控制台读取工具实现 | ✅ 完成 | 实现 read_console 工具，支持读取编辑器控制台输出 |
-| 脚本验证工具实现 | ✅ 完成 | 实现 validate_script 工具，支持脚本语法验证 |
+| 菜单项执行工具实现     | ✅ 完成 | 实现 execute_menu_item 工具，支持执行 Cocos Creator 菜单项          |
+| 代码编辑增强工具实现   | ✅ 完成 | 实现 apply_text_edits 工具，支持文本编辑操作应用                    |
+| 控制台读取工具实现     | ✅ 完成 | 实现 read_console 工具，支持读取编辑器控制台输出                    |
+| 脚本验证工具实现       | ✅ 完成 | 实现 validate_script 工具，支持脚本语法验证                         |
 
 ### 11.2 第四阶段开发计划（已完成）
 
-| 任务 | 状态 | 描述 |
-|------|------|------|
+| 任务         | 状态    | 描述                                           |
+| ------------ | ------- | ---------------------------------------------- |
 | 测试功能实现 | ✅ 完成 | 实现 run_tests.js 脚本，支持运行自动化测试用例 |
-| 错误处理增强 | ✅ 完成 | 完善 HTTP 服务和工具调用的错误日志记录 |
+| 错误处理增强 | ✅ 完成 | 完善 HTTP 服务和工具调用的错误日志记录         |
 
 ### 11.3 差异填补阶段（Gap Filling）- 已完成
 
-| 任务 | 状态 | 描述 |
-|------|------|------|
-| 特效管理 | ✅ 完成 | 实现 manage_vfx 工具，支持粒子系统管理 |
-| 文件哈希 | ✅ 完成 | 实现 get_sha 工具，支持文件 SHA-256 计算 |
+| 任务     | 状态    | 描述                                           |
+| -------- | ------- | ---------------------------------------------- |
+| 特效管理 | ✅ 完成 | 实现 manage_vfx 工具，支持粒子系统管理         |
+| 文件哈希 | ✅ 完成 | 实现 get_sha 工具，支持文件 SHA-256 计算       |
 | 动画管理 | ✅ 完成 | 实现 manage_animation 工具，支持动画播放与控制 |
 
 ### 11.4 第六阶段：可靠性与体验优化（已完成）
 
-| 任务 | 状态 | 描述 |
-|------|------|------|
-| IPC 工具增强 | ✅ 完成 | 修复 IpcManager 返回值解析，优化测试面板 (JSON 参数、筛选) |
-| 脚本可靠性修复 | ✅ 完成 | 解决脚本编译时序导致的挂载失败问题 (文档引导 + 刷新机制) |
+| 任务             | 状态    | 描述                                                                       |
+| ---------------- | ------- | -------------------------------------------------------------------------- |
+| IPC 工具增强     | ✅ 完成 | 修复 IpcManager 返回值解析，优化测试面板 (JSON 参数、筛选)                 |
+| 脚本可靠性修复   | ✅ 完成 | 解决脚本编译时序导致的挂载失败问题 (文档引导 + 刷新机制)                   |
 | 组件智能解析修复 | ✅ 完成 | 修复组件属性赋值时的 UUID 类型转换，支持压缩 UUID 及自定义组件 (`$_$ctor`) |
 
 ### 11.5 第七阶段开发计划（已完成）
 
-| 任务 | 状态 | 描述 |
-|------|------|------|
-| 插件发布 | ✅ 完成 | 准备发布，提交到 Cocos 插件商店 |
-| 文档完善 | ✅ 完成 | 完善 API 文档 ("Getting Started" 教程) |
-| 界面美化 | ✅ 完成 | 优化面板 UI 体验 |
+| 任务       | 状态    | 描述                                      |
+| ---------- | ------- | ----------------------------------------- |
+| 插件发布   | ✅ 完成 | 准备发布，提交到 Cocos 插件商店           |
+| 文档完善   | ✅ 完成 | 完善 API 文档 ("Getting Started" 教程)    |
+| 界面美化   | ✅ 完成 | 优化面板 UI 体验                          |
 | 国际化支持 | ✅ 完成 | 添加多语言 (i18n) 支持 (主要是中文本地化) |
-| 工具扩展 | ✅ 完成 | 添加更多高级工具 |
+| 工具扩展   | ✅ 完成 | 添加更多高级工具                          |
 
 ## 12. Unity-MCP 对比分析
 
@@ -486,33 +497,33 @@ manageAsset(args, callback) {
 
 通过与 Unity-MCP 对比，Cocos-MCP 已实现绝大多数核心功能。
 
-| 功能类别 | Unity-MCP 功能 | Cocos-MCP 状态 | 备注 |
-|---------|---------------|---------------|------|
-| 编辑器管理 | manage_editor | ✅ 已实现 | |
-| 游戏对象管理 | find_gameobjects | ✅ 已实现 | |
-| 材质管理 | manage_material | ✅ 已实现 | |
-| 纹理管理 | manage_texture | ✅ 已实现 | |
-| 代码编辑 | apply_text_edits | ✅ 已实现 | |
-| 全局搜索 | search_project | ✅ 已实现 | 升级版，支持正则和路径限定 |
-| 控制台 | read_console | ✅ 已实现 | |
-| 菜单执行 | execute_menu_item | ✅ 已实现 | 移除不稳定映射，推荐 delete-node:UUID |
-| 脚本验证 | validate_script | ✅ 已实现 | |
-| 撤销/重做 | undo/redo | ✅ 已实现 | |
-| VFX 管理 | manage_vfx | ✅ 已实现 | |
-| Git 集成 | get_sha | ✅ 已实现 | 虽然优先级中等，但已根据需求完成 |
-| 动画管理 | manage_animation | ✅ 已实现 | 支持播放、暂停、停止及信息获取 |
-| ScriptableObject | manage_so | ❌ 未实现 | 使用 AssetDB 替代 |
+| 功能类别         | Unity-MCP 功能    | Cocos-MCP 状态 | 备注                                  |
+| ---------------- | ----------------- | -------------- | ------------------------------------- |
+| 编辑器管理       | manage_editor     | ✅ 已实现      |                                       |
+| 游戏对象管理     | find_gameobjects  | ✅ 已实现      |                                       |
+| 材质管理         | manage_material   | ✅ 已实现      |                                       |
+| 纹理管理         | manage_texture    | ✅ 已实现      |                                       |
+| 代码编辑         | apply_text_edits  | ✅ 已实现      |                                       |
+| 全局搜索         | search_project    | ✅ 已实现      | 升级版，支持正则和路径限定            |
+| 控制台           | read_console      | ✅ 已实现      |                                       |
+| 菜单执行         | execute_menu_item | ✅ 已实现      | 移除不稳定映射，推荐 delete-node:UUID |
+| 脚本验证         | validate_script   | ✅ 已实现      |                                       |
+| 撤销/重做        | undo/redo         | ✅ 已实现      |                                       |
+| VFX 管理         | manage_vfx        | ✅ 已实现      |                                       |
+| Git 集成         | get_sha           | ✅ 已实现      | 虽然优先级中等，但已根据需求完成      |
+| 动画管理         | manage_animation  | ✅ 已实现      | 支持播放、暂停、停止及信息获取        |
+| ScriptableObject | manage_so         | ❌ 未实现      | 使用 AssetDB 替代                     |
 
 ## 13. 风险评估
 
 ### 13.1 潜在风险
 
-| 风险 | 影响 | 缓解措施 |
-|------|------|----------|
-| 编辑器 API 变更 | 插件功能失效 | 定期检查 Cocos 更新，适配新 API |
-| 性能问题 | 插件响应缓慢 | 优化批处理 (batch_execute)，减少 IPC 通讯 |
-| 安全漏洞 | 未授权访问 | (规划中) 面板设置 IP 白名单/Token 认证 |
-| 兼容性问题 | 多版本不兼容 | 测试主流版本 (2.4.x)，提供兼容层 |
+| 风险            | 影响         | 缓解措施                                  |
+| --------------- | ------------ | ----------------------------------------- |
+| 编辑器 API 变更 | 插件功能失效 | 定期检查 Cocos 更新，适配新 API           |
+| 性能问题        | 插件响应缓慢 | 优化批处理 (batch_execute)，减少 IPC 通讯 |
+| 安全漏洞        | 未授权访问   | (规划中) 面板设置 IP 白名单/Token 认证    |
+| 兼容性问题      | 多版本不兼容 | 测试主流版本 (2.4.x)，提供兼容层          |
 
 ## 14. 结论
 

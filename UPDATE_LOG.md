@@ -113,3 +113,10 @@
 
 - **清理死代码**: 删除 `/list-tools` 路由中重复的 `res.writeHead / res.end` 调用。
 - **文档更新**: `注意事项.md` 新增第 9 章「并发安全与防卡死机制」，记录 CommandQueue 和 IPC 超时两个防护机制。
+
+### 6. 场景与预制体工具增强
+
+- **新增 `open_prefab` 工具**: 解决了直接打开预制体进入编辑模式的问题。通过使用正确的 IPC 消息 `scene:enter-prefab-edit-mode` (并结合 `Editor.Ipc.sendToAll`)，使得 AI 可以精准操控预制体的编辑流程，而不再局限于场景跳转。
+- **优化预制体创建稳定性 (`create_node` + `prefab_management`)**:
+    - 在创建物理目录后强制执行 `Editor.assetdb.refresh`，确保 AssetDB 即时同步。
+    - 将节点重命名与预制体创建指令之间的安全延迟从 100ms 增加至 300ms，消除了重命名未完成导致创建失败的竞态条件。

@@ -6,14 +6,14 @@
 	"main": "main.js",
 	"scene-script": "scene-script.js",
 	"main-menu": {
-		"MCP Bridge/Open Panel": {
+		"MCP 桥接器/开启测试面板": {
 			"message": "mcp-bridge:open-test-panel"
 		}
 	},
 	"panel": {
 		"main": "panel/index.js",
 		"type": "dockable",
-		"title": "MCP Test Panel",
+		"title": "MCP 测试面板",
 		"width": 400,
 		"height": 300
 	},

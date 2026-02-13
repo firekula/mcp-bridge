@@ -10,7 +10,7 @@
 
 - **HTTP 服务接口**: 提供标准 HTTP 接口，外部工具可以通过 MCP 协议调用 Cocos Creator 编辑器功能
 - **场景节点操作**: 获取、创建、修改场景中的节点
-- **资源管理**: 创建场景、预制体，打开指定资源
+- **资源管理**: 创建场景、预制体，打开场景或预制体进入编辑模式
 - **组件管理**: 添加、删除、获取节点组件
 - **脚本管理**: 创建、删除、读取、写入脚本文件
 - **批处理执行**: 批量执行多个 MCP 工具操作，提高效率
@@ -123,10 +123,16 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **参数**:
     - `url`: 场景资源路径，如 `db://assets/NewScene.fire`
 
-### 7. create_node
+### 7. open_prefab
+
+- **描述**: 在编辑器中打开指定的预制体文件进入编辑模式。这是一个异步操作，打开后请等待几秒。
+- **参数**:
+    - `url`: 预制体资源路径，如 `db://assets/prefabs/Test.prefab`
+
+### 8. create_node
 
 - **描述**: 在当前场景中创建一个新节点。
-- **重要提示**: 
+- **重要提示**:
     1. 如果指定了 `parentId`，必须先通过 `get_scene_hierarchy` 确认该 UUID 对应的父节点仍然存在。
     2. **预设类型差异**：
         - `empty`: 纯空节点，无组件，不带贴图。
@@ -247,15 +253,15 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 - **描述**: 管理纹理
 - **参数**:
-	- `action`: 操作类型（`create`, `delete`, `get_info`, `update`）
-	- `path`: 纹理路径，如 `db://assets/textures/NewTexture.png`
-	- `properties`: 纹理属性（用于 `create`/`update` 操作）
-		- `type`: 纹理类型（如 `sprite`, `texture`, `raw`）(用于 `update`)
-		- `border`: 九宫格边距数组 `[top, bottom, left, right]` (用于 `update`，仅当 type 为 sprite 时有效)
-		- `subMetas`: (内部使用)
-		- `width`: 宽度 (用于 `create` 生成占位图)
-		- `height`: 高度 (用于 `create` 生成占位图)
-		- `native`: 原生路径
+    - `action`: 操作类型（`create`, `delete`, `get_info`, `update`）
+    - `path`: 纹理路径，如 `db://assets/textures/NewTexture.png`
+    - `properties`: 纹理属性（用于 `create`/`update` 操作）
+        - `type`: 纹理类型（如 `sprite`, `texture`, `raw`）(用于 `update`)
+        - `border`: 九宫格边距数组 `[top, bottom, left, right]` (用于 `update`，仅当 type 为 sprite 时有效)
+        - `subMetas`: (内部使用)
+        - `width`: 宽度 (用于 `create` 生成占位图)
+        - `height`: 高度 (用于 `create` 生成占位图)
+        - `native`: 原生路径
 
 ### 18. execute_menu_item
 
@@ -303,6 +309,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     - `includeSubpackages`: 是否搜索子包 (Boolean, 默认 true)
 
 **示例**:
+
 ```json
 // 正则搜索
 {
@@ -348,7 +355,6 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 - **描述**: 获取指定文件的 SHA-256 哈希值
 - **参数**:
     - `path`: 文件路径，如 `db://assets/scripts/Test.ts`
-
 
 ## 技术实现
 
@@ -413,11 +419,10 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 1.  **确定性优先**：任何对节点、组件、属性的操作，都必须建立在“主体已确认存在”的基础上。
 2.  **校验流程**：
-    *   **节点校验**：操作前必须使用 `get_scene_hierarchy` 确认节点。
-    *   **组件校验**：操作组件前必须使用 `get`（通过 `manage_components`）确认组件存在。
-    *   **属性校验**：更新属性前必须确认属性名准确无误。
+    - **节点校验**：操作前必须使用 `get_scene_hierarchy` 确认节点。
+    - **组件校验**：操作组件前必须使用 `get`（通过 `manage_components`）确认组件存在。
+    - **属性校验**：更新属性前必须确认属性名准确无误。
 3.  **禁止假设**：禁止盲目尝试对不存在的对象或属性进行修改。
-
 
 ## 贡献
 
