@@ -704,8 +704,8 @@ module.exports = {
 	 * @returns {Object} Editor.Profile 实例
 	 */
 	getProfile() {
-		// 'local' 表示存储在项目本地（local/mcp-bridge.json）
-		return Editor.Profile.load("profile://local/mcp-bridge.json", "mcp-bridge");
+		// 'project' 表示存储在项目本地（settings/mcp-bridge.json），实现配置隔离
+		return Editor.Profile.load("profile://project/mcp-bridge.json", "mcp-bridge");
 	},
 
 	/**
@@ -721,139 +721,161 @@ module.exports = {
 	startServer(port) {
 		if (mcpServer) this.stopServer();
 
-		try {
-			mcpServer = http.createServer((req, res) => {
-				res.setHeader("Content-Type", "application/json");
-				res.setHeader("Access-Control-Allow-Origin", "*");
+		const tryStart = (currentPort, retries) => {
+			if (retries <= 0) {
+				addLog("error", `Failed to find an available port after multiple attempts.`);
+				return;
+			}
 
-				let body = "";
-				req.on("data", (chunk) => {
-					body += chunk;
+			try {
+				mcpServer = http.createServer((req, res) => {
+					this._handleRequest(req, res);
 				});
-				req.on("end", () => {
-					const url = req.url;
-					if (url === "/list-tools") {
-						const tools = getToolsList();
-						addLog("info", `AI Client requested tool list`);
-						// 明确返回成功结构
-						res.writeHead(200);
-						return res.end(JSON.stringify({ tools: tools }));
-					}
-					if (url === "/list-resources") {
-						const resources = this.getResourcesList();
-						addLog("info", `AI Client requested resource list`);
-						res.writeHead(200);
-						return res.end(JSON.stringify({ resources: resources }));
-					}
-					if (url === "/read-resource") {
+
+				mcpServer.on("error", (e) => {
+					if (e.code === "EADDRINUSE") {
+						addLog("warn", `Port ${currentPort} is in use, trying ${currentPort + 1}...`);
 						try {
-							const { uri } = JSON.parse(body || "{}");
-							addLog("mcp", `READ -> [${uri}]`);
-							this.handleReadResource(uri, (err, content) => {
-								if (err) {
-									addLog("error", `读取失败: ${err}`);
-									res.writeHead(500);
-									return res.end(JSON.stringify({ error: err }));
-								}
-								addLog("success", `读取成功: ${uri}`);
-								res.writeHead(200);
-								// 返回 MCP Resource 格式: { contents: [{ uri, mimeType, text }] }
-								res.end(
-									JSON.stringify({
-										contents: [
-											{
-												uri: uri,
-												mimeType: "application/json",
-												text: typeof content === "string" ? content : JSON.stringify(content),
-											},
-										],
-									}),
-								);
-							});
-						} catch (e) {
+							mcpServer.close();
+						} catch (err) {
+							// align
+						}
+						mcpServer = null;
+						// Delay slightly to ensure cleanup
+						setTimeout(() => {
+							tryStart(currentPort + 1, retries - 1);
+						}, 100);
+					} else {
+						addLog("error", `Server Error: ${e.message}`);
+					}
+				});
+
+				mcpServer.listen(currentPort, () => {
+					serverConfig.active = true;
+					serverConfig.port = currentPort;
+					addLog("success", `MCP Server running at http://127.0.0.1:${currentPort}`);
+					Editor.Ipc.sendToPanel("mcp-bridge", "mcp-bridge:state-changed", serverConfig);
+
+					// Important: Do NOT save the auto-assigned port to profile to avoid pollution
+				});
+			} catch (e) {
+				addLog("error", `Failed to start server: ${e.message}`);
+			}
+		};
+
+		// Start trying from the configured port, retry 10 times
+		tryStart(port, 10);
+	},
+
+	_handleRequest(req, res) {
+		res.setHeader("Content-Type", "application/json");
+		res.setHeader("Access-Control-Allow-Origin", "*");
+
+		let body = "";
+		req.on("data", (chunk) => {
+			body += chunk;
+		});
+		req.on("end", () => {
+			const url = req.url;
+			if (url === "/list-tools") {
+				const tools = getToolsList();
+				addLog("info", `AI Client requested tool list`);
+				res.writeHead(200);
+				return res.end(JSON.stringify({ tools: tools }));
+			}
+			if (url === "/list-resources") {
+				const resources = this.getResourcesList();
+				addLog("info", `AI Client requested resource list`);
+				res.writeHead(200);
+				return res.end(JSON.stringify({ resources: resources }));
+			}
+			if (url === "/read-resource") {
+				try {
+					const { uri } = JSON.parse(body || "{}");
+					addLog("mcp", `READ -> [${uri}]`);
+					this.handleReadResource(uri, (err, content) => {
+						if (err) {
+							addLog("error", `读取失败: ${err}`);
 							res.writeHead(500);
-							res.end(JSON.stringify({ error: e.message }));
+							return res.end(JSON.stringify({ error: err }));
 						}
-						return;
-					}
-					if (url === "/call-tool") {
-						try {
-							const { name, arguments: args } = JSON.parse(body || "{}");
-							addLog("mcp", `REQ -> [${name}] (队列长度: ${commandQueue.length})`);
+						addLog("success", `读取成功: ${uri}`);
+						res.writeHead(200);
+						res.end(
+							JSON.stringify({
+								contents: [
+									{
+										uri: uri,
+										mimeType: "application/json",
+										text: typeof content === "string" ? content : JSON.stringify(content),
+									},
+								],
+							}),
+						);
+					});
+				} catch (e) {
+					res.writeHead(500);
+					res.end(JSON.stringify({ error: e.message }));
+				}
+				return;
+			}
+			if (url === "/call-tool") {
+				try {
+					const { name, arguments: args } = JSON.parse(body || "{}");
+					addLog("mcp", `REQ -> [${name}] (队列长度: ${commandQueue.length})`);
 
-							// 【关键修复】所有 MCP 指令通过队列串行化执行，
-							// 防止 AssetDB.refresh 等异步操作被并发请求打断导致编辑器卡死
-							enqueueCommand((done) => {
-								this.handleMcpCall(name, args, (err, result) => {
-									const response = {
-										content: [
-											{
-												type: "text",
-												text: err
-													? `Error: ${err}`
-													: typeof result === "object"
-														? JSON.stringify(result, null, 2)
-														: result,
-											},
-										],
-									};
-									if (err) {
-										addLog("error", `RES <- [${name}] 失败: ${err}`);
-									} else {
-										// 成功时尝试捕获简单的结果预览（如果是字符串或简短对象）
-										let preview = "";
-										if (typeof result === "string") {
-											preview = result.length > 100 ? result.substring(0, 100) + "..." : result;
-										} else if (typeof result === "object") {
-											try {
-												const jsonStr = JSON.stringify(result);
-												preview =
-													jsonStr.length > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
-											} catch (e) {
-												preview = "Object (Circular/Unserializable)";
-											}
-										}
-										addLog("success", `RES <- [${name}] 成功 : ${preview}`);
-									}
-									res.writeHead(200);
-									res.end(JSON.stringify(response));
-									done(); // 当前指令完成，释放队列给下一个指令
-								});
-							});
-						} catch (e) {
-							if (e instanceof SyntaxError) {
-								addLog("error", `JSON Parse Error: ${e.message}`);
-								res.writeHead(400);
-								res.end(JSON.stringify({ error: "Invalid JSON" }));
+					enqueueCommand((done) => {
+						this.handleMcpCall(name, args, (err, result) => {
+							const response = {
+								content: [
+									{
+										type: "text",
+										text: err
+											? `Error: ${err}`
+											: typeof result === "object"
+												? JSON.stringify(result, null, 2)
+												: result,
+									},
+								],
+							};
+							if (err) {
+								addLog("error", `RES <- [${name}] 失败: ${err}`);
 							} else {
-								addLog("error", `Internal Server Error: ${e.message}`);
-								res.writeHead(500);
-								res.end(JSON.stringify({ error: e.message }));
+								let preview = "";
+								if (typeof result === "string") {
+									preview = result.length > 100 ? result.substring(0, 100) + "..." : result;
+								} else if (typeof result === "object") {
+									try {
+										const jsonStr = JSON.stringify(result);
+										preview = jsonStr.length > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
+									} catch (e) {
+										preview = "Object (Circular/Unserializable)";
+									}
+								}
+								addLog("success", `RES <- [${name}] 成功 : ${preview}`);
 							}
-						}
-						return;
+							res.writeHead(200);
+							res.end(JSON.stringify(response));
+							done();
+						});
+					});
+				} catch (e) {
+					if (e instanceof SyntaxError) {
+						addLog("error", `JSON Parse Error: ${e.message}`);
+						res.writeHead(400);
+						res.end(JSON.stringify({ error: "Invalid JSON" }));
+					} else {
+						addLog("error", `Internal Server Error: ${e.message}`);
+						res.writeHead(500);
+						res.end(JSON.stringify({ error: e.message }));
 					}
+				}
+				return;
+			}
 
-					// --- 兜底处理 (404) ---
-					res.writeHead(404);
-					res.end(JSON.stringify({ error: "Not Found", url: url }));
-				});
-			});
-
-			mcpServer.on("error", (e) => {
-				addLog("error", `Server Error: ${e.message}`);
-			});
-			mcpServer.listen(port, () => {
-				serverConfig.active = true;
-				addLog("success", `MCP Server running at http://127.0.0.1:${port}`);
-				Editor.Ipc.sendToPanel("mcp-bridge", "mcp-bridge:state-changed", serverConfig);
-			});
-			// 启动成功后顺便存一下端口
-			this.getProfile().set("last-port", port);
-			this.getProfile().save();
-		} catch (e) {
-			addLog("error", `Failed to start server: ${e.message}`);
-		}
+			res.writeHead(404);
+			res.end(JSON.stringify({ error: "Not Found", url: url }));
+		});
 	},
 
 	/**
@@ -2273,7 +2295,12 @@ CCProgram fs %{
 
 		"toggle-server"(event, port) {
 			if (serverConfig.active) this.stopServer();
-			else this.startServer(port);
+			else {
+				// 用户手动启动时，保存偏好端口
+				this.getProfile().set("last-port", port);
+				this.getProfile().save();
+				this.startServer(port);
+			}
 		},
 		"clear-logs"() {
 			logBuffer = [];

@@ -39,6 +39,11 @@ Editor.Panel.extend({
 		 */
 		"mcp-bridge:state-changed"(event, config) {
 			this.updateUI(config.active);
+			// 如果服务器已启动，更新面板显示的端口为实际运行端口
+			if (config.active && config.port) {
+				const portInput = this.shadowRoot.querySelector("#portInput");
+				if (portInput) portInput.value = config.port;
+			}
 		},
 	},
 

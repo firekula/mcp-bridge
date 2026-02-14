@@ -1,316 +1,340 @@
 <div class="mcp-container">
-    <div class="tabs">
-        <ui-button id="tabMain" class="tab-button active">Main</ui-button>
-        <ui-button id="tabTest" class="tab-button">Tool Test</ui-button>
-        <ui-button id="tabIpc" class="tab-button">IPC Test</ui-button>
-    </div>
+	<div class="tabs">
+		<ui-button id="tabMain" class="tab-button active">主页</ui-button>
+		<ui-button id="tabTest" class="tab-button">工具测试</ui-button>
+		<ui-button id="tabIpc" class="tab-button">IPC 测试</ui-button>
+	</div>
 
-    <div id="panelMain" class="tab-content active">
-        <div class="toolbar">
-            <div class="ctrl-group">
-                <span>Port:</span>
-                <ui-input id="portInput" style="width: 60px;"></ui-input>
-                <ui-button id="btnToggle">Start</ui-button>
-            </div>
-            <div class="ctrl-group" style="margin-left: 10px">
-                <ui-checkbox id="autoStartCheck">Auto Start</ui-checkbox>
-            </div>
-            <div class="spacer"></div>
-            <ui-button id="btnClear" class="transparent">Clear</ui-button>
-            <ui-button id="btnCopy" class="transparent">Copy All</ui-button>
-        </div>
-        <div id="logConsole" class="log-view"></div>
-    </div>
+	<div id="panelMain" class="tab-content active">
+		<div class="toolbar">
+			<div class="ctrl-group">
+				<span>端口:</span>
+				<ui-input id="portInput" style="width: 60px"></ui-input>
+				<ui-button id="btnToggle">启动</ui-button>
+			</div>
+			<div class="ctrl-group" style="margin-left: 10px">
+				<ui-checkbox id="autoStartCheck">自动启动</ui-checkbox>
+			</div>
+			<div class="spacer"></div>
+			<ui-button id="btnClear" class="transparent">清空日志</ui-button>
+			<ui-button id="btnCopy" class="transparent">复制全部</ui-button>
+		</div>
+		<div id="logConsole" class="log-view"></div>
+	</div>
 
-    <div id="panelTest" class="tab-content">
-        <!-- ... existing content ... -->
-        <div class="test-layout">
-            <div class="left-panel" id="testLeftPanel">
-                <div class="form-item">
-                    <label>工具名称:</label>
-                    <ui-input id="toolName" placeholder="选中下方列表填充"></ui-input>
-                </div>
-                <label>可用工具列表:</label>
-                <div class="tools-list" id="toolsList"></div>
-            </div>
+	<div id="panelTest" class="tab-content">
+		<!-- ... existing content ... -->
+		<div class="test-layout">
+			<div class="left-panel" id="testLeftPanel">
+				<div class="form-item">
+					<label>工具名称:</label>
+					<ui-input id="toolName" placeholder="选中下方列表填充"></ui-input>
+				</div>
+				<label>可用工具列表:</label>
+				<div class="tools-list" id="toolsList"></div>
+			</div>
 
-            <!-- 拖动条 -->
-            <div class="resizer" id="testResizer"></div>
+			<!-- 拖动条 -->
+			<div class="resizer" id="testResizer"></div>
 
-            <div class="right-panel">
-                <div class="tool-description">
-                    <label>工具说明:</label>
-                    <div id="toolDescription" class="description-box">选择工具查看说明</div>
-                </div>
-                <div class="flex-v">
-                    <label>工具参数 (JSON):</label>
-                    <textarea id="toolParams" spellcheck="false" placeholder='{}'></textarea>
-                </div>
-                <div class="button-group">
-                    <ui-button id="testBtn" class="green">测试工具</ui-button>
-                    <ui-button id="listToolsBtn">刷新列表</ui-button>
-                    <ui-button id="clearTestBtn">清空结果</ui-button>
-                    <ui-button id="probeApisBtn">探查 API</ui-button>
-                </div>
-                <div class="flex-v">
-                    <label>测试结果:</label>
-                    <textarea id="resultContent" readonly spellcheck="false"></textarea>
-                </div>
-            </div>
-        </div>
-    </div>
+			<div class="right-panel">
+				<div class="tool-description">
+					<label>工具说明:</label>
+					<div id="toolDescription" class="description-box">选择工具查看说明</div>
+				</div>
+				<div class="flex-v">
+					<label>工具参数 (JSON):</label>
+					<textarea id="toolParams" spellcheck="false" placeholder="{}"></textarea>
+				</div>
+				<div class="button-group">
+					<ui-button id="testBtn" class="green">测试工具</ui-button>
+					<ui-button id="listToolsBtn">刷新列表</ui-button>
+					<ui-button id="clearTestBtn">清空结果</ui-button>
+					<ui-button id="probeApisBtn">探查 API</ui-button>
+				</div>
+				<div class="flex-v">
+					<label>测试结果:</label>
+					<textarea id="resultContent" readonly spellcheck="false"></textarea>
+				</div>
+			</div>
+		</div>
+	</div>
 
-    <div id="panelIpc" class="tab-content">
-        <div class="toolbar">
-            <ui-button id="btnScanIpc">Scan Messages</ui-button>
-            <select id="ipcFilter"
-                style="margin-left: 5px; background: #333; color: #ccc; border: 1px solid #555; height: 25px;">
-                <option value="all">Check All</option>
-                <option value="available">Show Available</option>
-                <option value="unavailable">Show Unavailable</option>
-                <option value="untested">Show Untested</option>
-            </select>
-            <div class="spacer"></div>
-            <ui-button id="btnTestIpc" class="green">Test Selected</ui-button>
-        </div>
-        <div class="ipc-container" style="display:flex; flex:1; flex-direction:column; min-height:0;">
-            <div class="ipc-list-header" style="padding: 5px; background: #222; border-bottom: 1px solid #444;">
-                <ui-checkbox id="cbSelectAllIpc">Select All/None</ui-checkbox>
-            </div>
-            <div id="ipcList" class="ipc-list"
-                style="flex:1; overflow-y:auto; background: #1e1e1e; border: 1px solid #444;"></div>
-            <div style="padding: 5px; border-top: 1px solid #444; display: flex; flex-direction: column;">
-                <label>Parameters (JSON):</label>
-                <textarea id="ipcParams" placeholder='e.g. {"uuid": "..."}'
-                    style="height: 50px; width: 100%; box-sizing: border-box; background: #222; color: #ccc; border: 1px solid #444; margin-bottom: 5px;"></textarea>
-            </div>
-            <div
-                style="height: 100px; display:flex; flex-direction:column; border-top: 1px solid #444; padding-top: 5px;">
-                <label>Test Log:</label>
-                <textarea id="ipcLog" readonly style="flex:1; font-family:monospace; font-size:10px;"></textarea>
-            </div>
-        </div>
-    </div>
+	<div id="panelIpc" class="tab-content">
+		<div class="toolbar">
+			<ui-button id="btnScanIpc">扫描消息</ui-button>
+			<select
+				id="ipcFilter"
+				style="margin-left: 5px; background: #333; color: #ccc; border: 1px solid #555; height: 25px"
+			>
+				<option value="all">全部显示</option>
+				<option value="available">仅显示可用</option>
+				<option value="unavailable">仅显示不可用</option>
+				<option value="untested">仅显示未测试</option>
+			</select>
+			<div class="spacer"></div>
+			<ui-button id="btnTestIpc" class="green">测试选中项</ui-button>
+		</div>
+		<div class="ipc-container" style="display: flex; flex: 1; flex-direction: column; min-height: 0">
+			<div class="ipc-list-header" style="padding: 5px; background: #222; border-bottom: 1px solid #444">
+				<ui-checkbox id="cbSelectAllIpc">全选/反选</ui-checkbox>
+			</div>
+			<div
+				id="ipcList"
+				class="ipc-list"
+				style="flex: 1; overflow-y: auto; background: #1e1e1e; border: 1px solid #444"
+			></div>
+			<div style="padding: 5px; border-top: 1px solid #444; display: flex; flex-direction: column">
+				<label>参数 (JSON):</label>
+				<textarea
+					id="ipcParams"
+					placeholder='例如: {"uuid": "..."}'
+					style="
+						height: 50px;
+						width: 100%;
+						box-sizing: border-box;
+						background: #222;
+						color: #ccc;
+						border: 1px solid #444;
+						margin-bottom: 5px;
+					"
+				></textarea>
+			</div>
+			<div
+				style="
+					height: 100px;
+					display: flex;
+					flex-direction: column;
+					border-top: 1px solid #444;
+					padding-top: 5px;
+				"
+			>
+				<label>测试日志:</label>
+				<textarea id="ipcLog" readonly style="flex: 1; font-family: monospace; font-size: 10px"></textarea>
+			</div>
+		</div>
+	</div>
 </div>
 
 <style>
-    :host {
-        height: 100%;
-        display: flex;
-        background-color: #2d2d2d;
-        overflow: hidden;
-    }
+	:host {
+		height: 100%;
+		display: flex;
+		background-color: #2d2d2d;
+		overflow: hidden;
+	}
 
-    .mcp-container {
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        height: 100%;
-        padding: 5px;
-        box-sizing: border-box;
-    }
+	.mcp-container {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		height: 100%;
+		padding: 5px;
+		box-sizing: border-box;
+	}
 
-    .tabs {
-        display: flex;
-        border-bottom: 1px solid #444;
-        margin-bottom: 5px;
-        flex-shrink: 0;
-    }
+	.tabs {
+		display: flex;
+		border-bottom: 1px solid #444;
+		margin-bottom: 5px;
+		flex-shrink: 0;
+	}
 
-    .tab-button {
-        padding: 4px 12px;
-        margin-right: 2px;
-        background: #333;
-    }
+	.tab-button {
+		padding: 4px 12px;
+		margin-right: 2px;
+		background: #333;
+	}
 
-    .tab-button.active {
-        background: #4CAF50;
-        color: white;
-    }
+	.tab-button.active {
+		background: #4caf50;
+		color: white;
+	}
 
-    .tab-content {
-        display: none;
-        flex: 1;
-        flex-direction: column;
-        min-height: 0;
-        overflow: hidden;
-    }
+	.tab-content {
+		display: none;
+		flex: 1;
+		flex-direction: column;
+		min-height: 0;
+		overflow: hidden;
+	}
 
-    .tab-content.active {
-        display: flex;
-    }
+	.tab-content.active {
+		display: flex;
+	}
 
-    /* Main Panel */
-    .toolbar {
-        display: flex;
-        align-items: center;
-        padding: 5px 0;
-        gap: 5px;
-        flex-shrink: 0;
-    }
+	/* Main Panel */
+	.toolbar {
+		display: flex;
+		align-items: center;
+		padding: 5px 0;
+		gap: 5px;
+		flex-shrink: 0;
+	}
 
-    .spacer {
-        flex: 1;
-    }
+	.spacer {
+		flex: 1;
+	}
 
-    .log-view {
-        flex: 1;
-        background: #1a1a1a;
-        margin-top: 5px;
-        overflow-y: auto;
-        padding: 8px;
-        font-family: monospace;
-        font-size: 11px;
-        -webkit-user-select: text;
-        min-height: 0;
-    }
+	.log-view {
+		flex: 1;
+		background: #1a1a1a;
+		margin-top: 5px;
+		overflow-y: auto;
+		padding: 8px;
+		font-family: monospace;
+		font-size: 11px;
+		-webkit-user-select: text;
+		user-select: text;
+		min-height: 0;
+	}
 
-    .log-item {
-        border-left: 4px solid #555;
-        padding-left: 8px;
-        margin-bottom: 3px;
-        white-space: pre-wrap;
-        word-break: break-all;
-    }
+	.log-item {
+		border-left: 4px solid #555;
+		padding-left: 8px;
+		margin-bottom: 3px;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
 
-    .log-item.info {
-        border-left-color: #61afef;
-        color: #abb2bf;
-    }
+	.log-item.info {
+		border-left-color: #61afef;
+		color: #abb2bf;
+	}
 
-    .log-item.success {
-        border-left-color: #98c379;
-        color: #98c379;
-    }
+	.log-item.success {
+		border-left-color: #98c379;
+		color: #98c379;
+	}
 
-    .log-item.warn {
-        border-left-color: #e5c07b;
-        color: #e5c07b;
-    }
+	.log-item.warn {
+		border-left-color: #e5c07b;
+		color: #e5c07b;
+	}
 
-    .log-item.error {
-        border-left-color: #e06c75;
-        color: #e06c75;
-    }
+	.log-item.error {
+		border-left-color: #e06c75;
+		color: #e06c75;
+	}
 
-    .log-item.mcp {
-        border-left-color: #c678dd;
-        color: #d19a66;
-        background: rgba(198, 120, 221, 0.05);
-    }
+	.log-item.mcp {
+		border-left-color: #c678dd;
+		color: #d19a66;
+		background: rgba(198, 120, 221, 0.05);
+	}
 
-    .time {
-        color: #5c6370;
-        margin-right: 8px;
-    }
+	.time {
+		color: #5c6370;
+		margin-right: 8px;
+	}
 
-    /* Test Panel */
-    .test-layout {
-        display: flex;
-        flex: 1;
-        min-height: 0;
-    }
+	/* Test Panel */
+	.test-layout {
+		display: flex;
+		flex: 1;
+		min-height: 0;
+	}
 
-    .left-panel {
-        width: 250px;
-        min-width: 150px;
-        max-width: 500px;
-        display: flex;
-        flex-direction: column;
-        flex-shrink: 0;
-        min-height: 0;
-    }
+	.left-panel {
+		width: 250px;
+		min-width: 150px;
+		max-width: 500px;
+		display: flex;
+		flex-direction: column;
+		flex-shrink: 0;
+		min-height: 0;
+	}
 
-    .resizer {
-        width: 6px;
-        cursor: col-resize;
-        background: #1a1a1a;
-        flex-shrink: 0;
-    }
+	.resizer {
+		width: 6px;
+		cursor: col-resize;
+		background: #1a1a1a;
+		flex-shrink: 0;
+	}
 
-    .resizer:hover {
-        background: #4CAF50;
-    }
+	.resizer:hover {
+		background: #4caf50;
+	}
 
-    .right-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-        padding-left: 5px;
-    }
+	.right-panel {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		padding-left: 5px;
+	}
 
-    .tools-list {
-        flex: 1;
-        background: #222;
-        border: 1px solid #444;
-        overflow-y: auto;
-        margin-top: 5px;
-    }
+	.tools-list {
+		flex: 1;
+		background: #222;
+		border: 1px solid #444;
+		overflow-y: auto;
+		margin-top: 5px;
+	}
 
-    .tool-item {
-        padding: 6px;
-        border-bottom: 1px solid #333;
-        cursor: pointer;
-        font-size: 11px;
-    }
+	.tool-item {
+		padding: 6px;
+		border-bottom: 1px solid #333;
+		cursor: pointer;
+		font-size: 11px;
+	}
 
-    .tool-item:hover {
-        background: #444;
-    }
+	.tool-item:hover {
+		background: #444;
+	}
 
-    .flex-v {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
-    }
+	.flex-v {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+	}
 
-    textarea {
-        width: 100%;
-        background: #222;
-        color: #ccc;
-        border: 1px solid #444;
-        padding: 5px;
-        font-family: monospace;
-        resize: none;
-    }
+	textarea {
+		width: 100%;
+		background: #222;
+		color: #ccc;
+		border: 1px solid #444;
+		padding: 5px;
+		font-family: monospace;
+		resize: none;
+	}
 
-    #toolParams {
-        height: 120px;
-        flex-shrink: 0;
-    }
+	#toolParams {
+		height: 120px;
+		flex-shrink: 0;
+	}
 
-    #resultContent {
-        flex: 1;
-    }
+	#resultContent {
+		flex: 1;
+	}
 
-    .button-group {
-        display: flex;
-        gap: 5px;
-        padding: 5px 0;
-    }
+	.button-group {
+		display: flex;
+		gap: 5px;
+		padding: 5px 0;
+	}
 
-    label {
-        font-size: 11px;
-        color: #888;
-        margin: 4px 0;
-    }
+	label {
+		font-size: 11px;
+		color: #888;
+		margin: 4px 0;
+	}
 
-    .tool-description {
-        margin-bottom: 10px;
-    }
+	.tool-description {
+		margin-bottom: 10px;
+	}
 
-    .description-box {
-        background: #222;
-        color: #ccc;
-        border: 1px solid #444;
-        padding: 8px;
-        font-size: 11px;
-        line-height: 1.4;
-        min-height: 60px;
-        max-height: 120px;
-        overflow-y: auto;
-        border-radius: 2px;
-    }
+	.description-box {
+		background: #222;
+		color: #ccc;
+		border: 1px solid #444;
+		padding: 8px;
+		font-size: 11px;
+		line-height: 1.4;
+		min-height: 60px;
+		max-height: 120px;
+		overflow-y: auto;
+		border-radius: 2px;
+	}
 </style>
