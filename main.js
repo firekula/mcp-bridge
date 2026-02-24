@@ -173,7 +173,7 @@ const getToolsList = () => {
 	return [
 		{
 			name: "get_selected_node",
-			description: `${globalPrecautions} 获取当前编辑器中选中的节点 ID。建议获取后立即调用 get_scene_hierarchy 确认该节点是否仍存在于当前场景中。`,
+			description: `获取当前编辑器中选中的节点 ID。建议获取后立即调用 get_scene_hierarchy 确认该节点是否仍存在于当前场景中。`,
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
@@ -190,13 +190,20 @@ const getToolsList = () => {
 		},
 		{
 			name: "save_scene",
-			description: `${globalPrecautions} 保存当前场景的修改`,
+			description: `保存当前场景的修改`,
 			inputSchema: { type: "object", properties: {} },
 		},
 		{
 			name: "get_scene_hierarchy",
-			description: `${globalPrecautions} 获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）`,
-			inputSchema: { type: "object", properties: {} },
+			description: `获取当前场景的节点树结构（包含 UUID、名称、子节点数）。若要查询节点组件详情等，请使用 manage_components。`,
+			inputSchema: {
+				type: "object",
+				properties: {
+					nodeId: { type: "string", description: "指定的根节点 UUID。如果不传则获取整个场景的根。" },
+					depth: { type: "number", description: "遍历的深度限制，默认为 2。用来防止过大场景导致返回数据超长。" },
+					includeDetails: { type: "boolean", description: "是否包含坐标、缩放等杂项详情，默认为 false。" }
+				}
+			},
 		},
 		{
 			name: "update_node_transform",
@@ -218,7 +225,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "create_scene",
-			description: `${globalPrecautions} 在 assets 目录下创建一个新的场景文件。创建并通过 open_scene 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。`,
+			description: `在 assets 目录下创建一个新的场景文件。创建并通过 open_scene 打开后，请务必初始化基础节点（如 Canvas 和 Camera）。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -241,7 +248,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "open_scene",
-			description: `${globalPrecautions} 打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒。重要：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。`,
+			description: `打开场景文件。注意：这是一个异步且耗时的操作，打开后请等待几秒。重要：如果是新创建或空的场景，请务必先创建并初始化基础节点（Canvas/Camera）。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -255,7 +262,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "open_prefab",
-			description: `${globalPrecautions} 在编辑器中打开预制体文件进入编辑模式。注意：这是一个异步操作，打开后请等待几秒。`,
+			description: `在编辑器中打开预制体文件进入编辑模式。注意：这是一个异步操作，打开后请等待几秒。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -424,12 +431,15 @@ const getToolsList = () => {
 		},
 		{
 			name: "find_gameobjects",
-			description: `${globalPrecautions} 查找游戏对象`,
+			description: `按条件在场景中搜索游戏对象。返回匹配节点的轻量级结构 (UUID, name, active, components 等)。若要获取完整的详细组件属性，请进一步对目标使用 manage_components。`,
 			inputSchema: {
 				type: "object",
 				properties: {
-					conditions: { type: "object", description: "查找条件" },
-					recursive: { type: "boolean", default: true, description: "是否递归查找" },
+					conditions: {
+						type: "object",
+						description: "查找条件。支持的属性：name (节点名称，支持模糊匹配), component (包含的组件类名，如 'cc.Sprite'), active (布尔值，节点的激活状态)。"
+					},
+					recursive: { type: "boolean", default: true, description: "是否递归查找所有子节点" },
 				},
 				required: ["conditions"],
 			},
@@ -538,7 +548,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "read_console",
-			description: `${globalPrecautions} 读取控制台`,
+			description: `读取控制台`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -553,7 +563,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "validate_script",
-			description: `${globalPrecautions} 验证脚本`,
+			description: `验证脚本`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -564,7 +574,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "search_project",
-			description: `${globalPrecautions} 搜索项目文件。支持三种模式：1. 'content' (默认): 搜索文件内容，支持正则表达式；2. 'file_name': 在指定目录下搜索匹配的文件名；3. 'dir_name': 在指定目录下搜索匹配的文件夹名。`,
+			description: `搜索项目文件。支持三种模式：1. 'content' (默认): 搜索文件内容，支持正则表达式；2. 'file_name': 在指定目录下搜索匹配的文件名；3. 'dir_name': 在指定目录下搜索匹配的文件夹名。`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -650,7 +660,7 @@ const getToolsList = () => {
 		},
 		{
 			name: "get_sha",
-			description: `${globalPrecautions} 获取指定文件的 SHA-256 哈希值`,
+			description: `获取指定文件的 SHA-256 哈希值`,
 			inputSchema: {
 				type: "object",
 				properties: {
@@ -999,7 +1009,7 @@ module.exports = {
 				break;
 
 			case "get_scene_hierarchy":
-				callSceneScriptWithTimeout("mcp-bridge", "get-hierarchy", null, callback);
+				callSceneScriptWithTimeout("mcp-bridge", "get-hierarchy", args, callback);
 				break;
 
 			case "update_node_transform":
@@ -1209,7 +1219,7 @@ module.exports = {
 				Editor.assetdb.create(
 					scriptPath,
 					content ||
-						`const { ccclass, property } = cc._decorator;
+					`const { ccclass, property } = cc._decorator;
 
 @ccclass
 export default class NewScript extends cc.Component {
@@ -2385,7 +2395,7 @@ CCProgram fs %{
 						} else {
 							props[key] = typeof val;
 						}
-					} catch (e) {}
+					} catch (e) { }
 				});
 				return { name, exists: true, props };
 			};

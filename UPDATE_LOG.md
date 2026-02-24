@@ -120,3 +120,32 @@
 - **优化预制体创建稳定性 (`create_node` + `prefab_management`)**:
     - 在创建物理目录后强制执行 `Editor.assetdb.refresh`，确保 AssetDB 即时同步。
     - 将节点重命名与预制体创建指令之间的安全延迟从 100ms 增加至 300ms，消除了重命名未完成导致创建失败的竞态条件。
+
+---
+
+## 八、 Token 消耗深度优化 (2026-02-24)
+
+### 1. 工具描述精简 (`main.js`)
+- **问题**: `globalPrecautions` (AI 安全守则) 被硬编码到所有工具的 `description` 中，导致每次环境初始化或查阅工具列表时浪费约 2200 个 CJK Token。
+- **优化**: 收束安全守则的广播范围。目前仅针对高风险的**写操作**（如 `manage_components`, `update_node_transform`, `manage_material`, `create_node` 等）保留警告，低风险或只读分析类工具（如 `get_scene_hierarchy`, `get_selected_node`）已悉数移除该文本。
+- **效果**: `/list-tools` 整体负载字符数缩减近 40%。
+
+### 2. 长数据截断保护 (`scene-script.js`)
+- **问题**: `manage_components(get)` 会完整序列化多边形坐标集、曲线数据数组以及 Base64 图片，产生极其庞大且对 AI 无用的 JSON 负载。
+- **优化**: 
+  - **数组截断**: 长度超过 10 的数组直接返回 `[Array(length)]`，彻底杜绝数据雪崩。
+  - **字符串截断**: 长度超过 200 的字符串限制为截断显示并附带 `...[Truncated, total length: X]` 提示。
+
+### 3. 层级树获取瘦身与分页 (`get_scene_hierarchy`)
+- **问题**: 请求场景层级时会一次性返回完整 1000+ 节点的深层结构，包括所有变换矩阵。
+- **优化**: 
+  - 支持 `depth` 深度限制（默认 2 层）。
+  - 支持 `nodeId` 参数，允许 AI 缩小作用域，从指定根节点向下探测。
+  - 添加 `includeDetails` 参数。默认关闭，此时剥离坐标、缩放与尺寸指标，且将冗长的组件详细结构浓缩成简化的名称数组（如 `["Sprite", "Button"]`）。
+
+### 4. 查找结果精简 (`find_gameobjects`)
+- **优化**: 将原本包含 Transform（位移/缩放/尺寸）全量数据的匹配回传，精简为仅包含核心识别特征的基础集 (`uuid`, `name`, `active`, `components`, `childrenCount`)，极大释放了同名大批量查找时的 Token 压力。
+
+### 5. 底层鲁棒性大修
+- **问题**: 上述优化在应用过程中暴露出遍历未命名根节点（如 `cc.Scene`）时遭遇 `undefined.startsWith` 报错并引发 IPC 悬挂的致命隐患。
+- **修复**: 在 `dumpNodes` 与 `searchNode` 中增设前置安全屏障，并修复 `cc.js.getClassName(c)` 替代底层的 `__typename` 来兼容 2.4 获取有效类名。修复了 `main.js` 中关于 `get_scene_hierarchy` 的参数传递脱节问题。

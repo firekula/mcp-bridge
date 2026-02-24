@@ -105,8 +105,11 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 4. get_scene_hierarchy
 
-- **描述**: 获取当前场景的完整节点树结构（包括 UUID、名称和层级关系）
-- **参数**: 无
+- **描述**: 获取当前场景的完整节点树结构（支持分页避免长数据截断）。如果要查询具体组件属性请配合 manage_components。
+- **参数**:
+    - `nodeId`: 指定的根节点 UUID。如果不传则获取整个场景的根 (可选)。
+    - `depth`: 遍历的深度限制，默认为 2。用来防止过大场景导致返回数据超长 (可选)。
+    - `includeDetails`: 是否包含坐标、缩放等杂项详情，默认为 false (可选)。
 
 ### 5. update_node_transform
 
@@ -223,14 +226,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 15. find_gameobjects
 
-- **描述**: 查找游戏对象
+- **描述**: 按条件在场景中搜索游戏对象。返回匹配节点的轻量级结构 (UUID, name, active, components 等)。若要获取完整的详细组件属性，请进一步对目标使用 `manage_components`。
 - **参数**:
     - `conditions`: 查找条件
-        - `name`: 节点名称（包含匹配）
-        - `tag`: 节点标签
-        - `component`: 组件类型
-        - `active`: 激活状态
-    - `recursive`: 是否递归查找（默认：true）
+        - `name`: 节点名称（包含模糊匹配）
+        - `component`: 包含的组件类名（如 `cc.Sprite`）
+        - `active`: 布尔值，节点的激活状态
+    - `recursive`: 是否递归查找所有的子节点（默认：true）
 
 ### 16. manage_material
 
