@@ -544,6 +544,20 @@ module.exports = {
 					return;
 				}
 
+				// 【防呆设计】拦截 AI 错误地将 cc.Node 作为组件添加
+				if (componentType === "cc.Node" || componentType === "Node") {
+					if (event.reply) {
+						event.reply(
+							new Error(
+								"【纠错提示】cc.Node 是节点而不是组件，无法被当做组件添加！\n" +
+									"- 如果你想创建带有名字的子节点，请不要使用 manage_components，而是使用 create-node (或相应的创建节点工具)。\n" +
+									"- 如果你想修改现有节点的 name 属性，请使用修改节点的 set-property 工具。",
+							),
+						);
+					}
+					return;
+				}
+
 				try {
 					// 解析组件类型
 					let compClass = null;
@@ -557,6 +571,18 @@ module.exports = {
 
 					if (!compClass) {
 						if (event.reply) event.reply(new Error(`找不到组件类型: ${componentType}`));
+						return;
+					}
+
+					// 【防呆设计】确保获取到的类是一个组件
+					if (!cc.js.isChildClassOf(compClass, cc.Component)) {
+						if (event.reply) {
+							event.reply(
+								new Error(
+									`【错误】'${componentType}' 不是一个合法的组件类型（必须继承自 cc.Component）。请确认你的意图。`,
+								),
+							);
+						}
 						return;
 					}
 

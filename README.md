@@ -167,6 +167,9 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     1. 如果属性期望组件类型但传入节点 UUID，插件会自动查找匹配组件。
     2. 对于资源类属性（如 `cc.Prefab`, `cc.Material`），传递资源的 UUID，插件会自动处理异步加载与序列化。
     3. **资产数组支持**: 针对 `materials` 等数组属性，支持传入 UUID 数组，插件将自动并发加载所有资源并同步更新编辑器 UI。
+- **防呆校验 (Safety Checks)**：
+    1. **类型拦截**: 严格禁止将 `cc.Node` 或 `Node` 作为组件类型添加，插件将直接拦截并以中文提示正确工具（如 `create-node` 或 `set-property`）。
+    2. **合法性检查**: 严格校验传入的组件类必须继承自 `cc.Component`，防止非法类型引发底层报错。
 - **操作规则 (Subject Validation Rule)**：赋值或更新前必须确保目标属性在组件上真实存在。
 
 ### 9. manage_script
