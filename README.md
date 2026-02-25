@@ -71,12 +71,12 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ```json
 {
-    "mcpServers": {
-        "cocos-creator": {
-            "command": "node",
-            "args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
-        }
-    }
+	"mcpServers": {
+		"cocos-creator": {
+			"command": "node",
+			"args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
+		}
+	}
 }
 ```
 
@@ -403,12 +403,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 日志管理
 
-插件会记录所有操作的日志，包括：
+插件会通过内置的测试面板（MCP Bridge/Open Panel）实时记录所有操作的日志，包括：
 
-- 服务启动/停止
-- MCP 请求接收
-- 操作成功/失败状态
-- 错误信息
+- 服务启动/停止状态
+- MCP 客户端请求接收（完整包含工具的 `arguments` 参数，超长自动截断）
+- 场景节点树遍历与耗时信息
+- 工具调用的执行成功/失败状态返回
+- IPC 消息和核心底层报错堆栈
 
 ## 注意事项
 
