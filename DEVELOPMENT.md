@@ -37,26 +37,26 @@ mcp-bridge/
 
 ```json
 {
-	"name": "mcp-bridge",
-	"version": "1.0.0",
-	"description": "MCP Bridge for Cocos Creator",
-	"main": "main.js",
-	"panel": {
-		"main": "panel/index.html",
-		"type": "dockable",
-		"title": "MCP Bridge",
-		"width": 800,
-		"height": 600
-	},
-	"contributions": {
-		"menu": [
-			{
-				"path": "Packages/MCP Bridge",
-				"label": "Open Test Panel",
-				"message": "open-test-panel"
-			}
-		]
-	}
+    "name": "mcp-bridge",
+    "version": "1.0.0",
+    "description": "MCP Bridge for Cocos Creator",
+    "main": "main.js",
+    "panel": {
+        "main": "panel/index.html",
+        "type": "dockable",
+        "title": "MCP Bridge",
+        "width": 800,
+        "height": 600
+    },
+    "contributions": {
+        "menu": [
+            {
+                "path": "Packages/MCP Bridge",
+                "label": "Open Test Panel",
+                "message": "open-test-panel"
+            }
+        ]
+    }
 }
 ```
 
@@ -116,18 +116,23 @@ startServer(port) {
 - **协议修正**: 经过测试对比，最终确认使用 `scene:enter-prefab-edit-mode` 消息并配合 `Editor.Ipc.sendToAll` 是进入预制体编辑模式的最佳方案，解决了 `scene:open-by-uuid` 无法触发编辑状态的问题。
 - **文档深度补全**: 遵循全局开发规范，同步更新了所有技术文档，确保 100% 简体中文覆盖及详尽的 JSDoc 注释。
 
+### 2026-02-25: 修复 manage_script 路径引用错误与强制生成 Meta
+
+- **缺陷修正**: 修复了 `main.js` 中 `manageScript` 处理 `create` 动作时由于变量名解构导致 `path.dirname` 找不到 `path` 引用的问题。现已改为使用预设的 `pathModule` 模块。
+- **规范强化**: 将 `manage_script` 的工具提示（Prompt）更新为强制要求调用 `refresh_editor` 生成脚本的 `.meta` 文件，以确保新创建的脚本能够被正确挂载为组件，同时不增加整体 Token 消耗。
+
 ### 3.2 MCP 工具注册
 
 在 `/list-tools` 接口中注册工具：
 
 ```javascript
 const tools = [
-	{
-		name: "get_selected_node",
-		description: "获取当前选中的节点",
-		parameters: [],
-	},
-	// 其他工具...
+    {
+        name: "get_selected_node",
+        description: "获取当前选中的节点",
+        parameters: [],
+    },
+    // 其他工具...
 ];
 ```
 
@@ -137,13 +142,13 @@ const tools = [
 
 ```javascript
 const sceneScript = {
-	"create-node"(params, callback) {
-		// 创建节点逻辑...
-	},
-	"set-property"(params, callback) {
-		// 设置属性逻辑...
-	},
-	// 其他操作...
+    "create-node"(params, callback) {
+        // 创建节点逻辑...
+    },
+    "set-property"(params, callback) {
+        // 设置属性逻辑...
+    },
+    // 其他操作...
 };
 ```
 
@@ -245,33 +250,33 @@ manageAsset(args, callback) {
 
 ```html
 <div class="mcp-container">
-	<!-- 标签页 -->
-	<div class="tabs">
-		<ui-button id="tabMain" class="tab-button active">Main</ui-button>
-		<ui-button id="tabTest" class="tab-button">Tool Test</ui-button>
-	</div>
+    <!-- 标签页 -->
+    <div class="tabs">
+        <ui-button id="tabMain" class="tab-button active">Main</ui-button>
+        <ui-button id="tabTest" class="tab-button">Tool Test</ui-button>
+    </div>
 
-	<!-- 主面板内容 -->
-	<div id="panelMain" class="tab-content active">
-		<!-- 主面板内容... -->
-	</div>
+    <!-- 主面板内容 -->
+    <div id="panelMain" class="tab-content active">
+        <!-- 主面板内容... -->
+    </div>
 
-	<!-- 测试面板内容 -->
-	<div id="panelTest" class="tab-content">
-		<div class="test-container">
-			<div class="test-layout">
-				<!-- 左侧工具列表 -->
-				<div class="left-panel">
-					<!-- 工具列表... -->
-				</div>
+    <!-- 测试面板内容 -->
+    <div id="panelTest" class="tab-content">
+        <div class="test-container">
+            <div class="test-layout">
+                <!-- 左侧工具列表 -->
+                <div class="left-panel">
+                    <!-- 工具列表... -->
+                </div>
 
-				<!-- 右侧输入输出 -->
-				<div class="right-panel">
-					<!-- 输入输出区域... -->
-				</div>
-			</div>
-		</div>
-	</div>
+                <!-- 右侧输入输出 -->
+                <div class="right-panel">
+                    <!-- 输入输出区域... -->
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 ```
 

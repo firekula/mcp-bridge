@@ -71,12 +71,12 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ```json
 {
-	"mcpServers": {
-		"cocos-creator": {
-			"command": "node",
-			"args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
-		}
-	}
+    "mcpServers": {
+        "cocos-creator": {
+            "command": "node",
+            "args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
+        }
+    }
 }
 ```
 
@@ -171,7 +171,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ### 9. manage_script
 
-- **描述**: 管理脚本文件，默认创建 TypeScript 脚本
+- **描述**: 管理脚本文件，默认创建 TypeScript 脚本。**注意**：创建或修改脚本后，此工具没有主动刷新资源库。如果将要作为组件挂载到节点，创建后**必须**接着显式调用 `refresh_editor` 工具（传递精准路径参数）以便编辑器生成 `.meta` 文件并分配 UUID，否则无法作为组件添加。
 - **参数**:
     - `action`: 操作类型（`create`, `delete`, `read`, `write`）
     - `path`: 脚本路径，如 `db://assets/scripts/NewScript.ts`
