@@ -695,6 +695,37 @@ const getToolsList = () => {
 
 module.exports = {
 	"scene-script": "scene-script.js",
+	openTestPanel() {
+		Editor.Panel.open("mcp-bridge");
+	},
+	querySpriteFrameUuid(event, uuid) {
+		const fs = require("fs");
+		try {
+			const url = Editor.assetdb.uuidToUrl(uuid);
+			if (!url) {
+				return event.reply && event.reply(null, null);
+			}
+			const fspath = Editor.assetdb.urlToFspath(url);
+			if (!fspath) {
+				return event.reply && event.reply(null, null);
+			}
+			const metaPath = fspath + ".meta";
+			if (fs.existsSync(metaPath)) {
+				const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+				if (meta && meta.subMetas) {
+					const subKeys = Object.keys(meta.subMetas);
+					for (let k of subKeys) {
+						if (meta.subMetas[k].uuid) {
+							return event.reply && event.reply(null, meta.subMetas[k].uuid);
+						}
+					}
+				}
+			}
+			return event.reply && event.reply(null, null);
+		} catch (e) {
+			return event.reply && event.reply(null, null);
+		}
+	},
 	/**
 	 * 插件加载时的回调
 	 */
@@ -840,9 +871,6 @@ module.exports = {
 					if (args) {
 						try {
 							argsPreview = typeof args === "object" ? JSON.stringify(args) : String(args);
-							if (argsPreview.length > 500) {
-								argsPreview = argsPreview.substring(0, 500) + "...[Truncated]";
-							}
 						} catch (e) {
 							argsPreview = "[无法序列化的参数]";
 						}
@@ -868,11 +896,10 @@ module.exports = {
 							} else {
 								let preview = "";
 								if (typeof result === "string") {
-									preview = result.length > 100 ? result.substring(0, 100) + "..." : result;
+									preview = result;
 								} else if (typeof result === "object") {
 									try {
-										const jsonStr = JSON.stringify(result);
-										preview = jsonStr.length > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
+										preview = JSON.stringify(result);
 									} catch (e) {
 										preview = "Object (Circular/Unserializable)";
 									}

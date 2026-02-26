@@ -447,9 +447,35 @@ module.exports = {
 									loadedCount++;
 									return;
 								}
+
+								// 从主进程查询是否这个 UUID 其实是一个纹理，而我们真正需要的是它的 SpriteFrame 子资源
+								if (propertyType === cc.SpriteFrame || key.toLowerCase().includes("sprite")) {
+									try {
+										const sfUuid = Editor.Ipc.sendToMainSync(
+											"mcp-bridge:query-spriteframe-uuid",
+											uuid,
+										);
+										if (sfUuid && sfUuid !== uuid) {
+											uuid = sfUuid;
+											Editor.log(
+												`[scene-script] 识别到材质类型为 SpriteFrame，已将纹理 UUID 自动纠正为 SpriteFrame UUID: ${uuid}`,
+											);
+										}
+									} catch (e) {
+										// 忽略
+									}
+								}
+
 								cc.AssetLibrary.loadAsset(uuid, (err, asset) => {
 									loadedCount++;
 									if (!err && asset) {
+										// 自动处理 Texture2D 到 SpriteFrame 的转换，防止由于传错了图片 UUID 导致赋值失效
+										if (
+											asset instanceof cc.Texture2D &&
+											(propertyType === cc.SpriteFrame || key.toLowerCase().includes("sprite"))
+										) {
+											asset = new cc.SpriteFrame(asset);
+										}
 										loadedAssets[idx] = asset;
 										Editor.log(`[scene-script] 成功为 ${key}[${idx}] 加载资源: ${asset.name}`);
 									} else {

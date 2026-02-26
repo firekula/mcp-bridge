@@ -207,3 +207,17 @@
 
 - **问题**: AI 偶尔会幻觉以为 `prefab_management`/`manage_script`/`manage_material`/`manage_texture`/`manage_shader` 的更新动作为 `save`，而不是标准定义的 `update` 或 `write`，导致抛出“未知的管理操作”报错。
 - **修复**: 在 `main.js` 所有这些管理工具的核心路由表中，为 `update` 和 `write` 操作均显式添加了 `case "save":` 作为后备兼容，极大地增强了不同大模型在不同提示词上下文环境下的操作容错率。
+
+---
+
+## 素材库与面板工具优化 (2026-02-26)
+
+### 1. 材质与 SpriteFrame 赋值增强
+
+- **问题**: 虽然支持了加载 Texture2D，但如果 AI 传给 `Sprite.spriteFrame` 属性的是原生贴图 UUID，在 `scene-script.js` 层面直接强转为 `new cc.SpriteFrame(asset)` 容易丢掉原图片配置信息，例如九宫格参数。
+- **重构**: 新增底层 IPC 消息 `query-spriteframe-uuid`。现在当场景脚本识别到目标属性为精灵材质时，会通过跨进程向主进程查询目标 UUID 关联物理文件所属的 `.meta`。提取真实的 `subMetas` 内 SpriteFrame 的长 UUID 并返回。之后再基于该长 UUID 调用标准的 `loadAsset`。彻底保证资源结构的稳定性。
+
+### 2. 测试面板输出全量解析
+
+- **问题**: 为了防止大体积结构传递给 AI 时引发 OOM 截断崩溃，`main.js` 后台强行限制了所有日志向 Webview 输出的边界值 (默认不超过 100~500 字符)，导致人类开发者从面板查看时无法追溯长内容如 Base64 和完整序列化返回值。
+- **修复**: 拆分了拦截逻辑。剔除 `argsPreview` 与 `preview` 针对主面板渲染视图输出 `addLog` 时的预备阶段的 `substring` 剪裁。如今编辑器 UI 内将能看到完整、原生的调用参数和回调结果，而对于通过 HTTP 接口返还给 AI 的载荷依然安全拦截。

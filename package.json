@@ -22,5 +22,17 @@
 			"auto-start": false,
 			"last-port": 3456
 		}
+	},
+	"messages": {
+		"open-test-panel": {
+			"methods": [
+				"openTestPanel"
+			]
+		},
+		"query-spriteframe-uuid": {
+			"methods": [
+				"querySpriteFrameUuid"
+			]
+		}
 	}
 }
