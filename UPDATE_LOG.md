@@ -193,3 +193,12 @@
     1. **直接拦截节点**: 当检测到传入 `cc.Node` 或 `Node` 作为组件类型时直接驳回，并返回富含指导意义的中文提示词（如“请使用 create-node 创建节点”）。
     2. **继承链校验**: 提取引擎类定义后，强制要求通过 `cc.js.isChildClassOf` 判断该类必须继承自 `cc.Component`。若不合法则即时截断并提示。
 - **价值**: 通过将冰冷的底层异常翻译为“手把手教 AI 怎么重试”的指导性异常，彻底根治了 AI 在操作组件时乱认对象、反复撞墙的通病。
+
+---
+
+## 防止核心属性被篡改崩溃 (2026-02-26)
+
+### 1. `manage_components` 核心属性保护
+
+- **问题**: AI 助手在使用 `manage_components` 尝试修改 `Label` 位置时，错误地对组件传参 `{ node: { position: ... } }`，导致 Label 的 `this.node` 强引用被覆写为普通对象。引发渲染报错 (`Cannot read property 'a' of undefined`) 和删除卡死 (`this.node._removeComponent is not a function`)。
+- **修复**: 在 `scene-script.js` 的 `applyProperties` 中增加了核心属性黑名单机制。强制拦截对 `node`, `uuid`, `_id` 的直接写入并给出警告。彻底杜绝由于组件的节点引用被破坏所引发的场景崩溃和编辑器卡死问题。

@@ -341,6 +341,15 @@ module.exports = {
 			const compClass = component.constructor;
 
 			for (const [key, value] of Object.entries(props)) {
+				// 【防呆设计】拦截对核心只读属性的非法重写
+				// 如果直接修改组件的 node 属性，会导致该引用丢失变成普通对象，进而引发编辑器卡死
+				if (key === "node" || key === "uuid" || key === "_id") {
+					Editor.warn(
+						`[scene-script] 拒绝覆盖组件的只读/核心属性: ${key}。请勿对组件执行此操作，修改位置/激活状态等请操作 Node 节点！`,
+					);
+					continue;
+				}
+
 				// 【核心修复】专门处理各类事件属性 (ClickEvents, ScrollEvents 等)
 				const isEventProp =
 					Array.isArray(value) && (key.toLowerCase().endsWith("events") || key === "clickEvents");
