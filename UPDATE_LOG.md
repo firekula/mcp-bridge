@@ -202,3 +202,8 @@
 
 - **问题**: AI 助手在使用 `manage_components` 尝试修改 `Label` 位置时，错误地对组件传参 `{ node: { position: ... } }`，导致 Label 的 `this.node` 强引用被覆写为普通对象。引发渲染报错 (`Cannot read property 'a' of undefined`) 和删除卡死 (`this.node._removeComponent is not a function`)。
 - **修复**: 在 `scene-script.js` 的 `applyProperties` 中增加了核心属性黑名单机制。强制拦截对 `node`, `uuid`, `_id` 的直接写入并给出警告。彻底杜绝由于组件的节点引用被破坏所引发的场景崩溃和编辑器卡死问题。
+
+### 2. 资源管理层 `save` 动作幻觉别名兼容
+
+- **问题**: AI 偶尔会幻觉以为 `prefab_management`/`manage_script`/`manage_material`/`manage_texture`/`manage_shader` 的更新动作为 `save`，而不是标准定义的 `update` 或 `write`，导致抛出“未知的管理操作”报错。
+- **修复**: 在 `main.js` 所有这些管理工具的核心路由表中，为 `update` 和 `write` 操作均显式添加了 `case "save":` 作为后备兼容，极大地增强了不同大模型在不同提示词上下文环境下的操作容错率。

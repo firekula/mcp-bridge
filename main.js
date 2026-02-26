@@ -1292,6 +1292,7 @@ export default class NewScript extends cc.Component {
 				}
 				break;
 
+			case "save": // 兼容 AI 幻觉
 			case "write":
 				// 使用 fs 写入 + refresh，确保覆盖成功
 				const writeFsPath = Editor.assetdb.urlToFspath(scriptPath);
@@ -1548,6 +1549,7 @@ export default class NewScript extends cc.Component {
 				callback(null, `指令已发送: 从节点 ${nodeId} 在目录 ${targetDir} 创建名为 ${prefabName} 的预制体`);
 				break;
 
+			case "save": // 兼容 AI 幻觉
 			case "update":
 				if (!nodeId) {
 					return callback("更新预制体需要节点 ID");
@@ -1723,6 +1725,7 @@ CCProgram fs %{
 				}
 				break;
 
+			case "save": // 兼容 AI 幻觉
 			case "write":
 				if (!Editor.assetdb.exists(effectPath)) {
 					return callback(`Effect not found: ${effectPath}`);
@@ -1803,6 +1806,7 @@ CCProgram fs %{
 				});
 				break;
 
+			case "save": // 兼容 AI 幻觉
 			case "update":
 				if (!Editor.assetdb.exists(matPath)) {
 					return callback(`找不到材质: ${matPath}`);
@@ -1963,6 +1967,7 @@ CCProgram fs %{
 					callback(`找不到纹理: ${path}`);
 				}
 				break;
+			case "save": // 兼容 AI 幻觉
 			case "update":
 				if (!Editor.assetdb.exists(path)) {
 					return callback(`找不到纹理: ${path}`);
