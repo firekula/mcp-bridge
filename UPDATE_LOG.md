@@ -196,6 +196,30 @@
 
 ---
 
+## 面板加载修复 (2026-02-24)
+
+### 1. `panel/index.js` 语法错误修复
+
+- **问题**: 面板加载时出现 `SyntaxError: Invalid or unexpected token`，导致 MCP Bridge 插件面板完全无法渲染。
+- **原因**: `index.js` 中存在非法字符或格式错误，被 Cocos Creator 的面板加载器拒绝解析。
+- **修复**: 清理了文件中的语法问题，确保面板能够正常加载和初始化。
+
+---
+
+## 防止核心属性被篡改崩溃 (2026-02-26)
+
+### 1. `manage_components` 核心属性保护
+
+- **问题**: AI 助手在使用 `manage_components` 尝试修改 `Label` 位置时，错误地对组件传参 `{ node: { position: ... } }`，导致 Label 的 `this.node` 强引用被覆写为普通对象。引发渲染报错 (`Cannot read property 'a' of undefined`) 和删除卡死 (`this.node._removeComponent is not a function`)。
+- **修复**: 在 `scene-script.js` 的 `applyProperties` 中增加了核心属性黑名单机制。强制拦截对 `node`, `uuid`, `_id` 的直接写入并给出警告。彻底杜绝由于组件的节点引用被破坏所引发的场景崩溃和编辑器卡死问题。
+
+### 2. 资源管理层 `save` 动作幻觉别名兼容
+
+- **问题**: AI 偶尔会幻觉以为 `prefab_management`/`manage_script`/`manage_material`/`manage_texture`/`manage_shader` 的更新动作为 `save`，而不是标准定义的 `update` 或 `write`，导致抛出"未知的管理操作"报错。
+- **修复**: 在 `main.js` 所有这些管理工具的核心路由表中，为 `update` 和 `write` 操作均显式添加了 `case "save":` 作为后备兼容，极大地增强了不同大模型在不同提示词上下文环境下的操作容错率。
+
+---
+
 ## 日志系统持久化与健壮性优化 (2026-02-27)
 
 ### 1. 日志文件持久化
@@ -225,13 +249,3 @@
 ### 5. 日志仅输出关键信息到编辑器控制台
 
 - **优化**: `addLog` 函数不再将所有类型的日志输出到编辑器控制台，仅 `error` 和 `warn` 级别日志通过 `Editor.error()` / `Editor.warn()` 输出，防止 `info` / `success` / `mcp` 类型日志刷屏干扰开发者。
-
----
-
-## 面板加载修复 (2026-02-24)
-
-### 1. `panel/index.js` 语法错误修复
-
-- **问题**: 面板加载时出现 `SyntaxError: Invalid or unexpected token`，导致 MCP Bridge 插件面板完全无法渲染。
-- **原因**: `index.js` 中存在非法字符或格式错误，被 Cocos Creator 的面板加载器拒绝解析。
-- **修复**: 清理了文件中的语法问题，确保面板能够正常加载和初始化。
