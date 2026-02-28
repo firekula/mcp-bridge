@@ -32,6 +32,7 @@
 - **超时保护**: IPC 通信和指令队列均有超时兜底机制
 - **属性保护**: 组件核心属性黑名单机制，防止 AI 篡改 `node`/`uuid` 等引用导致崩溃
 - **AI 容错**: 参数别名映射（`operation`→`action`、`save`→`update`/`write`），兼容大模型幻觉
+- **引用查找**: 查找场景中所有引用了指定节点或资源的位置，支持 Texture2D → SpriteFrame 子资源自动解析
 - **工具说明**: 测试面板提供详细的工具描述和参数说明
 
 ## 安装与使用
@@ -366,6 +367,30 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/src/mcp-pro
 - **描述**: 获取指定文件的 SHA-256 哈希值
 - **参数**:
     - `path`: 文件路径，如 `db://assets/scripts/Test.ts`
+
+### 27. find_references
+
+- **描述**: 查找当前场景中引用了指定节点或资源的所有位置。返回引用所在节点、组件类型、属性名等详细信息。
+- **参数**:
+    - `targetId`: 要查找引用的目标 UUID（节点 UUID 或资源 UUID）
+    - `targetType`: 目标类型（可选，默认 `auto`）
+        - `node`: 查找节点引用
+        - `asset`: 查找资源引用
+        - `auto`: 自动检测类型
+- **智能特性**:
+    1. **UUID 格式自动规范化**: 自动处理 22 位压缩和 36 位标准 UUID 格式差异。
+    2. **Texture2D 子资源解析**: 传入 Texture2D 的 UUID 时，自动读取 `.meta` 文件提取 SpriteFrame 子资源 UUID，也能查到 `cc.Sprite.spriteFrame` 的引用。
+- **返回值**:
+    - `targetId`: 查找的目标 UUID
+    - `targetType`: 检测到的类型 (`node` 或 `asset`)
+    - `referenceCount`: 引用总数
+    - `references`: 引用详情数组，每项包含：
+        - `nodeId`: 引用所在节点 UUID
+        - `nodeName`: 节点名称
+        - `componentType`: 组件类型
+        - `componentIndex`: 组件索引
+        - `propertyName`: 属性名
+        - `propertyValue`: 属性值描述
 
 ## 技术实现
 

@@ -759,6 +759,22 @@ const getToolsList = () => {
                 required: ["action", "nodeId"],
             },
         },
+        {
+            name: "find_references",
+            description: `查找当前场景中引用了指定节点或资源的所有位置。返回引用所在节点、组件类型、属性名等详细信息。支持查找节点引用（cc.Node）和资源引用（cc.Prefab, cc.SpriteFrame, sp.SkeletonData 等）。`,
+            inputSchema: {
+                type: "object",
+                properties: {
+                    targetId: { type: "string", description: "要查找引用的目标 UUID（节点 UUID 或资源 UUID）" },
+                    targetType: {
+                        type: "string",
+                        enum: ["node", "asset", "auto"],
+                        description: "目标类型。'node' 查找节点引用，'asset' 查找资源引用，'auto' (默认) 自动检测",
+                    },
+                },
+                required: ["targetId"],
+            },
+        },
     ];
 };
 
@@ -1323,6 +1339,39 @@ module.exports = {
 
                 callSceneScriptWithTimeout("mcp-bridge", "manage-vfx", args, callback);
                 break;
+
+            case "find_references": {
+                // 自动解析 Texture2D → SpriteFrame 子资源 UUID
+                // 确保传入图片 UUID 也能查到使用对应 SpriteFrame 的组件
+                const additionalIds = [];
+                try {
+                    const targetUrl = Editor.assetdb.uuidToUrl(args.targetId);
+                    if (targetUrl) {
+                        const targetFspath = Editor.assetdb.urlToFspath(targetUrl);
+                        if (targetFspath) {
+                            const metaPath = targetFspath + ".meta";
+                            if (fs.existsSync(metaPath)) {
+                                const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+                                if (meta && meta.subMetas) {
+                                    for (const subKey of Object.keys(meta.subMetas)) {
+                                        const sub = meta.subMetas[subKey];
+                                        if (sub && sub.uuid) {
+                                            additionalIds.push(sub.uuid);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    addLog("warn", `[find_references] 解析子资源 UUID 失败: ${e.message}`);
+                }
+                if (additionalIds.length > 0) {
+                    args.additionalIds = additionalIds;
+                }
+                callSceneScriptWithTimeout("mcp-bridge", "find-references", args, callback);
+                break;
+            }
 
             default:
                 callback(`Unknown tool: ${name}`);

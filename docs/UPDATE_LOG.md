@@ -326,3 +326,26 @@
 
 - **问题**: `prefabManagement` 的 `create` 分支中，`targetDir` 变量在使用时未被定义，导致创建预制体时目录路径为 `undefined`。
 - **修复**: 在使用前从 `prefabPath` 中正确提取目录路径：`const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf("/"))`。
+
+---
+
+## 引用查找与资源 UUID 自动解析 (2026-03-01)
+
+### 1. 新增 `find_references` 工具
+
+- **功能**: 查找当前场景中引用了指定节点或资源的所有位置。支持节点引用 (`cc.Node`) 和资源引用 (`cc.Prefab`, `cc.SpriteFrame`, `sp.SkeletonData` 等)。
+- **实现**:
+    - 在 `src/scene-script.js` 中新增 `find-references` IPC 处理函数，递归遍历场景所有节点的所有组件属性，检查属性值是否引用了目标对象。
+    - 支持直接属性值、数组元素、`EventHandler.target` 的深层检查。
+    - 在 `src/main.js` 中新增工具定义和路由。
+- **返回结构**: 包含 `targetId`、`targetType` (检测类型)、`referenceCount` (引用计数) 和详细的 `references` 数组，每项包含引用所在节点、组件类型、属性名等信息。
+
+### 2. UUID 格式自动规范化
+
+- **问题**: Cocos Creator 2.x 中 `cc.Asset._uuid` 使用 22 位压缩格式，而 `Editor.assetdb` 返回标准 36 位带连字符格式，直接字符串比较无法匹配。
+- **修复**: 在 `find-references` 处理函数中通过 `Editor.Utils.UuidUtils` 预计算目标 UUID 的压缩和解压格式，将所有变体存入 `targetVariants` 数组进行全量匹配。
+
+### 3. Texture2D -> SpriteFrame 子资源 UUID 自动解析
+
+- **问题**: AI 大模型在查找图片引用时，通常只知道 Texture2D (原图) 的 UUID，而 `cc.Sprite.spriteFrame` 实际引用的是其子资源 SpriteFrame 的 UUID，导致查找结果为空。
+- **修复**: 在 `src/main.js` 的 `find_references` 路由中，调用 scene-script 前自动读取目标 UUID 对应资源的 `.meta` 文件，提取所有 `subMetas` 中的子资源 UUID (如 SpriteFrame)，作为 `additionalIds` 传递给 scene-script。scene-script 将这些额外 UUID 及其压缩/解压变体一并加入匹配列表，实现 "传入 Texture2D UUID 也能查到 SpriteFrame 引用" 的透明体验。
