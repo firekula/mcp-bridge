@@ -62,13 +62,13 @@
 
 ```
 Command: node
-Args: [Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js
+Args: [Cocos Creator 项目的绝对路径]/packages/mcp-bridge/src/mcp-proxy.js
 ```
 
 例如，在你的项目中，完整路径应该是：
 
 ```
-Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.js
+Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/src/mcp-proxy.js
 ```
 
 ### 或者添加 JSON 配置：
@@ -78,13 +78,13 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
     "mcpServers": {
         "cocos-creator": {
             "command": "node",
-            "args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
+            "args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/src/mcp-proxy.js"]
         }
     }
 }
 ```
 
-注意：请将上述配置中的路径替换为你自己项目中 `mcp-proxy.js` 文件的实际绝对路径。
+注意：请将上述配置中的路径替换为你自己项目中 `src/mcp-proxy.js` 文件的实际绝对路径。
 
 ## API 接口
 
@@ -373,8 +373,11 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 插件采用了典型的 Cocos Creator 扩展架构，包含以下几个部分：
 
-- **main.js**: 插件主入口，负责启动 HTTP 服务和处理 MCP 请求
-- **scene-script.js**: 场景脚本，负责实际执行节点操作
+- **src/main.js**: 插件主入口，负责启动 HTTP 服务和处理 MCP 请求
+- **src/scene-script.js**: 场景脚本，负责实际执行节点操作
+- **src/mcp-proxy.js**: MCP 代理，负责在 AI 工具和插件之间转发请求
+- **src/IpcManager.js**: IPC 消息管理器
+- **src/IpcUi.js**: IPC 测试面板 UI
 - **panel/**: 面板界面，提供用户交互界面
     - `index.html`: 面板 UI 结构
     - `index.js`: 面板交互逻辑
@@ -393,9 +396,9 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 ### 数据流
 
 1. 外部工具发送 MCP 请求到插件的 HTTP 接口
-2. main.js 接收请求并解析参数
-3. 通过 Editor.Scene.callSceneScript 将请求转发给 scene-script.js
-4. scene-script.js 在场景线程中执行具体操作
+2. src/main.js 接收请求并解析参数
+3. 通过 Editor.Scene.callSceneScript 将请求转发给 src/scene-script.js
+4. src/scene-script.js 在场景线程中执行具体操作
 5. 将结果返回给外部工具
 
 ## 开发指南
@@ -404,9 +407,9 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 要在插件中添加新的 MCP 工具，需要：
 
-1. 在 main.js 的 `/list-tools` 响应中添加工具定义
+1. 在 src/main.js 的 `/list-tools` 响应中添加工具定义
 2. 在 handleMcpCall 函数中添加对应的处理逻辑
-3. 如需在场景线程中执行，需要在 scene-script.js 中添加对应函数
+3. 如需在场景线程中执行，需要在 src/scene-script.js 中添加对应函数
 
 ### 日志管理
 
@@ -439,7 +442,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ## 更新日志
 
-请查阅 [UPDATE_LOG.md](./UPDATE_LOG.md) 了解详细的版本更新历史、功能优化与修复过程。
+请查阅 [UPDATE_LOG.md](./docs/UPDATE_LOG.md) 了解详细的版本更新历史、功能优化与修复过程。
 
 ## 贡献
 

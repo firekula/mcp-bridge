@@ -6,7 +6,7 @@
  */
 
 const fs = require("fs");
-const { IpcUi } = require("../dist/IpcUi");
+const { IpcUi } = require("../src/IpcUi");
 
 Editor.Panel.extend({
     /**
@@ -87,7 +87,7 @@ Editor.Panel.extend({
             }
         });
 
-        // 初始化 IPC 调试专用 UI (由 TypeScript 编写并编译到 dist)
+        // 初始化 IPC 调试专用 UI
         new IpcUi(root);
 
         // 2. 标签页切换逻辑

@@ -1,5 +1,5 @@
 "use strict";
-const { IpcManager } = require("./dist/IpcManager");
+const { IpcManager } = require("./IpcManager");
 
 const http = require("http");
 const pathModule = require("path");
