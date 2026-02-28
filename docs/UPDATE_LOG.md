@@ -305,3 +305,24 @@
 - **问题**: 当 AI 大模型尝试给 `cc.Sprite` 等组件的 `spriteFrame` 属性赋值时，常常会错误传递为其父级 `Texture2D` (原图) 的 UUID。Cocos 引擎由于类型不匹配会导致赋值无效，且静默失败（或陷入 IPC 死锁导致编辑器卡死）。
 - **优化**: 在 `scene-script.js` 中的 `applyProperties` 环节新增了类型容错机制。当识别到传入的 UUID 对应 `Texture2D` 但该属性（例如含 `sprite` 关键字）需要 `SpriteFrame` 时，脚本会利用 Node.js `fs` 直接读取对应的 `.meta` 文件，提取出实际子资源 (`SpriteFrame`) 的正确 UUID，从而实现自动转换与安全赋值。
 - **降级**: 若自动转换失败（如 `meta` 结构改变或读取失败），则会通过 `Editor.warn` 在控制台明确提示类型错误，拦截强制赋值操作，彻底消除潜在的隐性崩溃。
+
+---
+
+## 预制体创建 IPC 调用签名修复 (2026-02-28)
+
+### 1. `create_prefab` IPC 调用方式修复 (`src/main.js`)
+
+- **问题**: `create_prefab` 工具调用创建预制体时，控制台报 `Error: Invalid path: null` 和 `TypeError: e.reply is not a function`，预制体创建失败。
+- **原因**: 原代码使用了错误的 IPC 调用签名：
+    - ❌ `Editor.Ipc.sendToMain("scene:create-prefab", nodeId, fullFilePath)` — 错误使用了 `sendToMain`，且参数格式不正确。
+- **修复**: 修正为 Cocos Creator 2.4.x 的正确签名：
+    - ✅ `Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [nodeId], dirPath)` — 三个关键修正：
+        1. 使用 `sendToPanel` 而非 `sendToMain`（该消息由 Scene 面板的渲染进程处理）。
+        2. 节点 ID 必须包裹在数组中 `[nodeId]`（支持多选创建场景）。
+        3. 第二个参数必须是 **目录路径**（如 `db://assets`），而非完整文件路径（如 `db://assets/XXX.prefab`）。
+- **补充**: 创建前先通过 `scene:set-property` 将节点重命名为目标预制体名称，确保生成的 `.prefab` 文件名与节点名一致。
+
+### 2. `prefabManagement` 创建功能 `targetDir` 未定义修复 (`src/main.js`)
+
+- **问题**: `prefabManagement` 的 `create` 分支中，`targetDir` 变量在使用时未被定义，导致创建预制体时目录路径为 `undefined`。
+- **修复**: 在使用前从 `prefabPath` 中正确提取目录路径：`const targetDir = prefabPath.substring(0, prefabPath.lastIndexOf("/"))`。
