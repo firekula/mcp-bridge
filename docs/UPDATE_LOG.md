@@ -295,3 +295,13 @@
 
 - **问题**: `instantiate-prefab` 中查找父节点直接调用 `cc.engine.getInstanceById(parentId)`，绕过了 `findNode` 函数的压缩 UUID 解压与兼容逻辑。
 - **修复**: 统一改用 `findNode(parentId)`，确保所有场景操作对压缩和非压缩 UUID 格式的兼容性一致。
+
+---
+
+## 编辑器体验与容错增强 (2026-02-28)
+
+### 1. SpriteFrame 智能识别与自动转换
+
+- **问题**: 当 AI 大模型尝试给 `cc.Sprite` 等组件的 `spriteFrame` 属性赋值时，常常会错误传递为其父级 `Texture2D` (原图) 的 UUID。Cocos 引擎由于类型不匹配会导致赋值无效，且静默失败（或陷入 IPC 死锁导致编辑器卡死）。
+- **优化**: 在 `scene-script.js` 中的 `applyProperties` 环节新增了类型容错机制。当识别到传入的 UUID 对应 `Texture2D` 但该属性（例如含 `sprite` 关键字）需要 `SpriteFrame` 时，脚本会利用 Node.js `fs` 直接读取对应的 `.meta` 文件，提取出实际子资源 (`SpriteFrame`) 的正确 UUID，从而实现自动转换与安全赋值。
+- **降级**: 若自动转换失败（如 `meta` 结构改变或读取失败），则会通过 `Editor.warn` 在控制台明确提示类型错误，拦截强制赋值操作，彻底消除潜在的隐性崩溃。

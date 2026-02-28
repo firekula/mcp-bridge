@@ -437,43 +437,68 @@ module.exports = {
 								return;
 							}
 
+							const fs = require("fs");
+							const path = require("path");
+
 							uuids.forEach((uuid, idx) => {
 								if (typeof uuid !== "string" || uuid.length < 10) {
 									loadedCount++;
 									return;
 								}
 
-								// 从主进程查询是否这个 UUID 其实是一个纹理，而我们真正需要的是它的 SpriteFrame 子资源
-								if (propertyType === cc.SpriteFrame || key.toLowerCase().includes("sprite")) {
+								// 尝试进行自动转换：如果这是原图，且需要 SpriteFrame，自动读取其 meta 获取子 UUID
+								const needsSpriteFrame =
+									propertyType === cc.SpriteFrame || key.toLowerCase().includes("sprite");
+
+								let targetUuid = uuid;
+
+								if (needsSpriteFrame && Editor && Editor.assetdb && Editor.assetdb.remote) {
 									try {
-										const sfUuid = Editor.Ipc.sendToMainSync(
-											"mcp-bridge:query-spriteframe-uuid",
-											uuid,
-										);
-										if (sfUuid && sfUuid !== uuid) {
-											uuid = sfUuid;
-											Editor.log(
-												`[scene-script] 识别到材质类型为 SpriteFrame，已将纹理 UUID 自动纠正为 SpriteFrame UUID: ${uuid}`,
-											);
+										const fspath = Editor.assetdb.remote.uuidToFspath(uuid);
+										if (fspath) {
+											const metaPath = fspath + ".meta";
+											if (fs.existsSync(metaPath)) {
+												const metaContent = fs.readFileSync(metaPath, "utf-8");
+												const metaObj = JSON.parse(metaContent);
+												// Creator 2.x 图片的 subMetas 里通常存储着以图片名命名的 spriteFrame
+												if (metaObj && metaObj.subMetas) {
+													const subKeys = Object.keys(metaObj.subMetas);
+													// 如果有子 spriteFrame，提取它的 uuid
+													for (const subKey of subKeys) {
+														const subMeta = metaObj.subMetas[subKey];
+														if (subMeta && (subMeta.uuid || subMeta.rawTextureUuid)) {
+															targetUuid = subMeta.uuid;
+															Editor.log(
+																`[scene-script] 自动转换 UUID: ${uuid} (Texture2D) -> ${targetUuid} (SpriteFrame)`,
+															);
+															break;
+														}
+													}
+												}
+											}
 										}
-									} catch (e) {
-										// 忽略
+									} catch (err) {
+										Editor.log(`[scene-script] 读取 meta 失败: ${err.message}`);
 									}
 								}
 
-								cc.AssetLibrary.loadAsset(uuid, (err, asset) => {
+								cc.AssetLibrary.loadAsset(targetUuid, (err, asset) => {
 									loadedCount++;
 									if (!err && asset) {
-										// 自动处理 Texture2D 到 SpriteFrame 的转换，防止由于传错了图片 UUID 导致赋值失效
-										if (
-											asset instanceof cc.Texture2D &&
-											(propertyType === cc.SpriteFrame || key.toLowerCase().includes("sprite"))
-										) {
-											asset = new cc.SpriteFrame(asset);
+										// 判断是否依然是 Texture2D，并且需要 SpriteFrame
+										const stillIsTexture = asset instanceof cc.Texture2D && needsSpriteFrame;
+
+										if (stillIsTexture) {
+											Editor.warn(
+												`[scene-script] 拒绝为 ${key}[${idx}] 赋值：给 SpriteFrame 属性传递了 Texture2D (原图) 的 UUID ${targetUuid}。自动转换失败，请使用正确的 SpriteFrame UUID。`,
+											);
+										} else {
+											loadedAssets[idx] = asset;
 										}
-										loadedAssets[idx] = asset;
 									} else {
-										Editor.warn(`[scene-script] 未能为 ${key}[${idx}] 加载资源 ${uuid}: ${err}`);
+										Editor.warn(
+											`[scene-script] 未能为 ${key}[${idx}] 加载资源 ${targetUuid}: ${err}`,
+										);
 									}
 
 									if (loadedCount === uuids.length) {
