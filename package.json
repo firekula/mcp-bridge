@@ -3,8 +3,8 @@
 	"version": "1.0.0",
 	"description": "Cocos Creator MCP 桥接插件",
 	"author": "Firekula",
-	"main": "main.js",
-	"scene-script": "scene-script.js",
+	"main": "src/main.js",
+	"scene-script": "src/scene-script.js",
 	"main-menu": {
 		"MCP 桥接器/开启测试面板": {
 			"message": "mcp-bridge:open-test-panel"

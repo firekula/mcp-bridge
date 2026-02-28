@@ -15,7 +15,7 @@
 - **脚本管理**: 创建、删除、读取、写入脚本文件
 - **批处理执行**: 批量执行多个 MCP 工具操作，提高效率
 - **资产管理**: 创建、删除、移动、获取资源信息
-- **实时日志**: 提供详细的操作日志记录和展示
+- **实时日志**: 提供详细的操作日志记录和展示，支持持久化写入项目内日志文件
 - **自动启动**: 支持编辑器启动时自动开启服务
 - **编辑器管理**: 获取和设置选中对象，刷新编辑器
 - **游戏对象查找**: 根据条件查找场景中的节点
@@ -28,6 +28,10 @@
 - **全局搜索**: 在项目中搜索文本内容
 - **撤销/重做**: 管理编辑器的撤销栈
 - **特效管理**: 创建和修改粒子系统
+- **并发安全**: 指令队列串行化执行，防止编辑器卡死
+- **超时保护**: IPC 通信和指令队列均有超时兜底机制
+- **属性保护**: 组件核心属性黑名单机制，防止 AI 篡改 `node`/`uuid` 等引用导致崩溃
+- **AI 容错**: 参数别名映射（`operation`→`action`、`save`→`update`/`write`），兼容大模型幻觉
 - **工具说明**: 测试面板提供详细的工具描述和参数说明
 
 ## 安装与使用
@@ -58,29 +62,29 @@
 
 ```
 Command: node
-Args: [Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js
+Args: [Cocos Creator 项目的绝对路径]/packages/mcp-bridge/src/mcp-proxy.js
 ```
 
 例如，在你的项目中，完整路径应该是：
 
 ```
-Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.js
+Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/src/mcp-proxy.js
 ```
 
 ### 或者添加 JSON 配置：
 
 ```json
 {
-	"mcpServers": {
-		"cocos-creator": {
-			"command": "node",
-			"args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/mcp-proxy.js"]
-		}
-	}
+    "mcpServers": {
+        "cocos-creator": {
+            "command": "node",
+            "args": ["[Cocos Creator 项目的绝对路径]/packages/mcp-bridge/src/mcp-proxy.js"]
+        }
+    }
 }
 ```
 
-注意：请将上述配置中的路径替换为你自己项目中 `mcp-proxy.js` 文件的实际绝对路径。
+注意：请将上述配置中的路径替换为你自己项目中 `src/mcp-proxy.js` 文件的实际绝对路径。
 
 ## API 接口
 
@@ -369,8 +373,11 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 插件采用了典型的 Cocos Creator 扩展架构，包含以下几个部分：
 
-- **main.js**: 插件主入口，负责启动 HTTP 服务和处理 MCP 请求
-- **scene-script.js**: 场景脚本，负责实际执行节点操作
+- **src/main.js**: 插件主入口，负责启动 HTTP 服务和处理 MCP 请求
+- **src/scene-script.js**: 场景脚本，负责实际执行节点操作
+- **src/mcp-proxy.js**: MCP 代理，负责在 AI 工具和插件之间转发请求
+- **src/IpcManager.js**: IPC 消息管理器
+- **src/IpcUi.js**: IPC 测试面板 UI
 - **panel/**: 面板界面，提供用户交互界面
     - `index.html`: 面板 UI 结构
     - `index.js`: 面板交互逻辑
@@ -389,9 +396,9 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 ### 数据流
 
 1. 外部工具发送 MCP 请求到插件的 HTTP 接口
-2. main.js 接收请求并解析参数
-3. 通过 Editor.Scene.callSceneScript 将请求转发给 scene-script.js
-4. scene-script.js 在场景线程中执行具体操作
+2. src/main.js 接收请求并解析参数
+3. 通过 Editor.Scene.callSceneScript 将请求转发给 src/scene-script.js
+4. src/scene-script.js 在场景线程中执行具体操作
 5. 将结果返回给外部工具
 
 ## 开发指南
@@ -400,19 +407,20 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 要在插件中添加新的 MCP 工具，需要：
 
-1. 在 main.js 的 `/list-tools` 响应中添加工具定义
+1. 在 src/main.js 的 `/list-tools` 响应中添加工具定义
 2. 在 handleMcpCall 函数中添加对应的处理逻辑
-3. 如需在场景线程中执行，需要在 scene-script.js 中添加对应函数
+3. 如需在场景线程中执行，需要在 src/scene-script.js 中添加对应函数
 
 ### 日志管理
 
-插件会通过内置的测试面板（MCP Bridge/Open Panel）实时记录所有操作的日志，包括：
+插件会通过内置的测试面板（MCP Bridge/Open Panel）实时记录所有操作的日志，并同步持久化写入项目目录 `settings/mcp-bridge.log` 文件，编辑器重启后仍可查阅历史日志。日志记录包括：
 
 - 服务启动/停止状态
 - MCP 客户端请求接收（完整包含工具的 `arguments` 参数，超长自动截断）
 - 场景节点树遍历与耗时信息
 - 工具调用的执行成功/失败状态返回
 - IPC 消息和核心底层报错堆栈
+- 内存保护：日志缓冲区上限 2000 条，超出自动截断旧日志
 
 ## 注意事项
 
@@ -434,7 +442,7 @@ Args: [你的项目所在盘符]:/[项目路径]/packages/mcp-bridge/mcp-proxy.j
 
 ## 更新日志
 
-请查阅 [UPDATE_LOG.md](./UPDATE_LOG.md) 了解详细的版本更新历史、功能优化与修复过程。
+请查阅 [UPDATE_LOG.md](./docs/UPDATE_LOG.md) 了解详细的版本更新历史、功能优化与修复过程。
 
 ## 贡献
 

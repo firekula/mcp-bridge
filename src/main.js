@@ -1,5 +1,5 @@
 "use strict";
-const { IpcManager } = require("./dist/IpcManager");
+const { IpcManager } = require("./IpcManager");
 
 const http = require("http");
 const pathModule = require("path");
@@ -29,7 +29,14 @@ let isProcessingCommand = false;
  */
 function enqueueCommand(fn) {
 	return new Promise((resolve) => {
-		commandQueue.push({ fn, resolve });
+		// 兜底超时保护：防止 fn 内部未调用 done() 导致队列永久停滞
+		const timeoutId = setTimeout(() => {
+			addLog("error", "[CommandQueue] 指令执行超时(60s)，强制释放队列");
+			isProcessingCommand = false;
+			resolve();
+			processNextCommand();
+		}, 60000);
+		commandQueue.push({ fn, resolve, timeoutId });
 		processNextCommand();
 	});
 }
@@ -40,15 +47,17 @@ function enqueueCommand(fn) {
 function processNextCommand() {
 	if (isProcessingCommand || commandQueue.length === 0) return;
 	isProcessingCommand = true;
-	const { fn, resolve } = commandQueue.shift();
+	const { fn, resolve, timeoutId } = commandQueue.shift();
 	try {
 		fn(() => {
+			clearTimeout(timeoutId);
 			isProcessingCommand = false;
 			resolve();
 			processNextCommand();
 		});
 	} catch (e) {
 		// 防止队列因未捕获异常永久阻塞
+		clearTimeout(timeoutId);
 		addLog("error", `[CommandQueue] 指令执行异常: ${e.message}`);
 		isProcessingCommand = false;
 		resolve();
@@ -92,25 +101,85 @@ function callSceneScriptWithTimeout(pluginName, method, args, callback, timeout 
 }
 
 /**
- * 封装日志函数，同时发送给面板、保存到内存并在编辑器控制台打印
- * @param {'info' | 'success' | 'warn' | 'error'} type 日志类型
+ * 日志文件路径（懒初始化，在项目 settings 目录下）
+ * @type {string|null}
+ */
+let _logFilePath = null;
+
+/**
+ * 获取日志文件路径
+ * @returns {string|null}
+ */
+function getLogFilePath() {
+	if (_logFilePath) return _logFilePath;
+	try {
+		const assetsPath = Editor.assetdb.urlToFspath("db://assets");
+		if (assetsPath) {
+			const projectRoot = pathModule.dirname(assetsPath);
+			const settingsDir = pathModule.join(projectRoot, "settings");
+			if (!fs.existsSync(settingsDir)) {
+				fs.mkdirSync(settingsDir, { recursive: true });
+			}
+			_logFilePath = pathModule.join(settingsDir, "mcp-bridge.log");
+			// 日志轮转: 超过 2MB 时备份旧日志并创建新文件
+			try {
+				if (fs.existsSync(_logFilePath)) {
+					const stats = fs.statSync(_logFilePath);
+					if (stats.size > 2 * 1024 * 1024) {
+						const backupPath = _logFilePath + ".old";
+						if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+						fs.renameSync(_logFilePath, backupPath);
+					}
+				}
+			} catch (e) {
+				/* 轮转失败不影响主流程 */
+			}
+			return _logFilePath;
+		}
+	} catch (e) {
+		// 静默失败，不影响主流程
+	}
+	return null;
+}
+
+/**
+ * 封装日志函数
+ * - 所有日志发送到 MCP 测试面板 + 内存缓存
+ * - 仅 error / warn 输出到编辑器控制台（防止刷屏）
+ * - 所有日志实时追加写入项目内 settings/mcp-bridge.log 文件（持久化）
+ * @param {'info' | 'success' | 'warn' | 'error' | 'mcp'} type 日志类型
  * @param {string} message 日志内容
  */
 function addLog(type, message) {
 	const logEntry = {
-		time: new Date().toLocaleTimeString(),
+		time: new Date().toISOString().replace("T", " ").substring(0, 23),
 		type: type,
 		content: message,
 	};
 	logBuffer.push(logEntry);
+	// 防止内存泄漏：限制日志缓存上限
+	if (logBuffer.length > 2000) {
+		logBuffer = logBuffer.slice(-1500);
+	}
+	// 发送到面板
 	Editor.Ipc.sendToPanel("mcp-bridge", "mcp-bridge:on-log", logEntry);
 
-	// 【修改】确保所有日志都输出到编辑器控制台，以便用户查看
+	// 仅关键信息输出到编辑器控制台（error / warn）
 	if (type === "error") {
 		Editor.error(`[MCP] ${message}`);
 	} else if (type === "warn") {
 		Editor.warn(`[MCP] ${message}`);
-	} else {
+	}
+
+	// 持久化到日志文件（实时写入，确保闪退时不丢失）
+	try {
+		const logPath = getLogFilePath();
+		if (logPath) {
+			const line = `[${logEntry.time}] [${type}] ${message}\n`;
+			fs.appendFileSync(logPath, line, "utf8");
+		}
+	} catch (e) {
+		// 文件写入失败时静默，不影响主流程
 	}
 }
 
@@ -816,11 +885,21 @@ module.exports = {
 		res.setHeader("Content-Type", "application/json");
 		res.setHeader("Access-Control-Allow-Origin", "*");
 
+		const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB 请求体上限
 		let body = "";
+		let aborted = false;
 		req.on("data", (chunk) => {
 			body += chunk;
+			if (body.length > MAX_BODY_SIZE) {
+				aborted = true;
+				addLog("error", `[HTTP] 请求体超过 ${MAX_BODY_SIZE} 字节上限，已拒绝`);
+				res.writeHead(413);
+				res.end(JSON.stringify({ error: "请求体过大" }));
+				req.destroy();
+			}
 		});
 		req.on("end", () => {
+			if (aborted) return;
 			const url = req.url;
 			if (url === "/list-tools") {
 				const tools = getToolsList();

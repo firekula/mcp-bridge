@@ -143,13 +143,10 @@ module.exports = {
 	 */
 	"update-node-transform": function (event, args) {
 		const { id, x, y, scaleX, scaleY, color } = args;
-		Editor.log(`[scene-script] update-node-transform called for ${id} with args: ${JSON.stringify(args)}`);
 
 		let node = findNode(id);
 
 		if (node) {
-			Editor.log(`[scene-script] 找到节点: ${node.name}, 当前坐标: (${node.x}, ${node.y})`);
-
 			// 使用 scene:set-property 实现支持 Undo 的属性修改
 			// 注意：IPC 消息需要发送到 'scene' 面板
 			if (x !== undefined) {
@@ -213,7 +210,6 @@ module.exports = {
 			Editor.Ipc.sendToMain("scene:dirty");
 			Editor.Ipc.sendToAll("scene:node-changed", { uuid: id });
 
-			Editor.log(`[scene-script] 更新完成。新坐标: (${node.x}, ${node.y})`);
 			if (event.reply) event.reply(null, "变换信息已更新");
 		} else {
 			if (event.reply) event.reply(new Error("找不到节点"));
@@ -369,7 +365,6 @@ module.exports = {
 
 								if (targetNode) {
 									handler.target = targetNode;
-									Editor.log(`[scene-script] Resolved event target: ${targetNode.name}`);
 								}
 							}
 
@@ -477,7 +472,6 @@ module.exports = {
 											asset = new cc.SpriteFrame(asset);
 										}
 										loadedAssets[idx] = asset;
-										Editor.log(`[scene-script] 成功为 ${key}[${idx}] 加载资源: ${asset.name}`);
 									} else {
 										Editor.warn(`[scene-script] 未能为 ${key}[${idx}] 加载资源 ${uuid}: ${err}`);
 									}
@@ -529,7 +523,6 @@ module.exports = {
 										);
 									}
 								}
-								Editor.log(`[scene-script] 已应用 ${key} 的引用: ${targetNode.name}`);
 							} else if (value && value.length > 20) {
 								// 如果明确是组件/节点类型但找不到，才报错
 								Editor.warn(`[scene-script] 无法解析 ${key} 的目标节点/组件: ${value}`);
@@ -540,7 +533,6 @@ module.exports = {
 								const targetNode = findNode(value);
 								if (targetNode) {
 									finalValue = targetNode;
-									Editor.log(`[scene-script] 启发式解析 ${key} 的节点: ${targetNode.name}`);
 								} else {
 									// 找不到节点且是 UUID -> 视为资源
 									const compIndex = node._components.indexOf(component);
@@ -552,9 +544,8 @@ module.exports = {
 											value: { uuid: value },
 											isSubProp: false,
 										});
-										Editor.log(`[scene-script] 通过 IPC 启发式解析 ${key} 的资源: ${value}`);
 									}
-									return;
+									continue;
 								}
 							}
 						}
@@ -853,7 +844,7 @@ module.exports = {
 			}
 
 			// 设置父节点
-			let parent = parentId ? cc.engine.getInstanceById(parentId) : scene;
+			let parent = parentId ? findNode(parentId) : scene;
 			if (parent) {
 				instance.parent = parent;
 
