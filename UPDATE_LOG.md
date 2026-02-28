@@ -249,3 +249,37 @@
 ### 5. 日志仅输出关键信息到编辑器控制台
 
 - **优化**: `addLog` 函数不再将所有类型的日志输出到编辑器控制台，仅 `error` 和 `warn` 级别日志通过 `Editor.error()` / `Editor.warn()` 输出，防止 `info` / `success` / `mcp` 类型日志刷屏干扰开发者。
+
+---
+
+## 性能与可靠性优化 (2026-02-28)
+
+### 1. CommandQueue 超时保护恢复
+
+- **问题**: 合并冲突解决时 `enqueueCommand` 中的 60 秒兜底超时保护代码丢失，导致如果工具函数内部异常未调用 `done()`，整个指令队列将永久停滞，后续所有操作将卡死不再响应。
+- **修复**: 在 `enqueueCommand` 中为每个入队指令注册 `setTimeout(60000)` 超时定时器，正常完成时通过 `clearTimeout` 取消。
+
+### 2. HTTP 请求体大小限制
+
+- **问题**: `_handleRequest` 中 `body += chunk` 无上限保护，超大请求体（恶意或异常客户端）可能耗尽编辑器进程内存。
+- **修复**: 新增 5MB (`5 * 1024 * 1024`) 请求体上限，超出时返回 HTTP 413 并销毁连接。
+
+### 3. 日志文件轮转机制
+
+- **问题**: `settings/mcp-bridge.log` 文件持续追加写入，长期使用会无限增长占用磁盘空间。
+- **修复**: 在 `getLogFilePath()` 初始化时检查文件大小，超过 2MB 自动将旧日志重命名为 `.old` 备份后创建新文件。
+
+### 4. 清理冗余调试日志
+
+- **问题**: `scene-script.js` 中 `update-node-transform` 和 `applyProperties` 共有 8 处 `Editor.log` 调试日志，每次操作都输出到编辑器控制台造成刷屏。
+- **修复**: 移除所有冗余 `Editor.log` 调试输出，保留必要的 `Editor.warn` 警告（如资源加载失败、属性解析失败等）。
+
+### 5. `applyProperties` 逻辑修复
+
+- **问题**: `applyProperties` 启发式资源解析分支中使用了 `return` 而非 `continue`，导致处理到该分支后会直接退出整个 `for...of` 循环，跳过后续属性的设置。
+- **修复**: 将 `return` 改为 `continue`，确保多属性同时更新时所有属性都能被正确处理。
+
+### 6. `instantiate-prefab` 统一使用 `findNode`
+
+- **问题**: `instantiate-prefab` 中查找父节点直接调用 `cc.engine.getInstanceById(parentId)`，绕过了 `findNode` 函数的压缩 UUID 解压与兼容逻辑。
+- **修复**: 统一改用 `findNode(parentId)`，确保所有场景操作对压缩和非压缩 UUID 格式的兼容性一致。
