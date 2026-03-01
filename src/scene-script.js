@@ -107,8 +107,14 @@ module.exports = {
             if (includeDetails) {
                 nodeData.active = node.active;
                 nodeData.position = { x: Math.round(node.x), y: Math.round(node.y) };
+                nodeData.rotation = node.angle;
                 nodeData.scale = { x: node.scaleX, y: node.scaleY };
+                nodeData.anchor = { x: node.anchorX, y: node.anchorY };
                 nodeData.size = { width: node.width, height: node.height };
+                nodeData.color = { r: node.color.r, g: node.color.g, b: node.color.b };
+                nodeData.opacity = node.opacity;
+                nodeData.skew = { x: node.skewX, y: node.skewY };
+                nodeData.group = node.group;
                 nodeData.components = comps.map((c) => cc.js.getClassName(c));
             } else {
                 // 简略模式下如果存在组件，至少提供一个极简列表让 AI 知道节点的作用
@@ -137,9 +143,9 @@ module.exports = {
     },
 
     /**
-     * 批量更新节点的变换信息 (坐标、缩放、颜色)
+     * 批量更新节点的变换信息 (坐标、缩放、颜色等)
      * @param {Object} event IPC 事件对象
-     * @param {Object} args 参数 (id, x, y, scaleX, scaleY, color)
+     * @param {Object} args 参数 (id, x, y, rotation, scaleX, scaleY, anchorX, anchorY, color, opacity, skewX, skewY, width, height)
      */
     "update-node-transform": function (event, args) {
         const { id, x, y, scaleX, scaleY, color } = args;
@@ -147,64 +153,45 @@ module.exports = {
         let node = findNode(id);
 
         if (node) {
-            // 使用 scene:set-property 实现支持 Undo 的属性修改
-            // 注意：IPC 消息需要发送到 'scene' 面板
+            // 直接赋值，确保同步生效
             if (x !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "x",
-                    type: "Number",
-                    value: Number(x),
-                });
+                node.x = Number(x);
             }
             if (y !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "y",
-                    type: "Number",
-                    value: Number(y),
-                });
+                node.y = Number(y);
+            }
+            if (args.rotation !== undefined) {
+                node.angle = Number(args.rotation);
             }
             if (args.width !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "width",
-                    type: "Number",
-                    value: Number(args.width),
-                });
+                node.width = Number(args.width);
             }
             if (args.height !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "height",
-                    type: "Number",
-                    value: Number(args.height),
-                });
+                node.height = Number(args.height);
             }
             if (scaleX !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "scaleX",
-                    type: "Number",
-                    value: Number(scaleX),
-                });
+                node.scaleX = Number(scaleX);
             }
             if (scaleY !== undefined) {
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id,
-                    path: "scaleY",
-                    type: "Number",
-                    value: Number(scaleY),
-                });
+                node.scaleY = Number(scaleY);
+            }
+            if (args.anchorX !== undefined) {
+                node.anchorX = Number(args.anchorX);
+            }
+            if (args.anchorY !== undefined) {
+                node.anchorY = Number(args.anchorY);
             }
             if (color) {
-                const c = new cc.Color().fromHEX(color);
-                Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-                    id: id,
-                    path: "color",
-                    type: "Color",
-                    value: { r: c.r, g: c.g, b: c.b, a: c.a },
-                });
+                node.color = new cc.Color().fromHEX(color);
+            }
+            if (args.opacity !== undefined) {
+                node.opacity = Number(args.opacity);
+            }
+            if (args.skewX !== undefined) {
+                node.skewX = Number(args.skewX);
+            }
+            if (args.skewY !== undefined) {
+                node.skewY = Number(args.skewY);
             }
 
             Editor.Ipc.sendToMain("scene:dirty");

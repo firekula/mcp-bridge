@@ -89,7 +89,18 @@ function callSceneScriptWithTimeout(pluginName, method, args, callback, timeout 
         if (!settled) {
             settled = true;
             clearTimeout(timer);
-            callback(err, result);
+            // 友好化处理 Scene 面板未就绪的错误（如插件重载、场景切换期间）
+            if (err && typeof err === "object" && err.message && err.message.includes("panel not found")) {
+                const friendlyMsg = `场景面板尚未就绪（可能正在重载插件或切换场景），请等待几秒后重试。原始信息: ${err.message}`;
+                addLog("warn", `[scene-script] ${friendlyMsg}`);
+                callback(friendlyMsg);
+            } else if (err && typeof err === "string" && err.includes("panel not found")) {
+                const friendlyMsg = `场景面板尚未就绪（可能正在重载插件或切换场景），请等待几秒后重试。原始信息: ${err}`;
+                addLog("warn", `[scene-script] ${friendlyMsg}`);
+                callback(friendlyMsg);
+            } else {
+                callback(err, result);
+            }
         }
     };
 
@@ -286,11 +297,17 @@ const getToolsList = () => {
                     id: { type: "string", description: "节点 UUID" },
                     x: { type: "number" },
                     y: { type: "number" },
+                    rotation: { type: "number", description: "旋转角度" },
                     width: { type: "number" },
                     height: { type: "number" },
                     scaleX: { type: "number" },
                     scaleY: { type: "number" },
+                    anchorX: { type: "number", description: "锚点 X (0~1)" },
+                    anchorY: { type: "number", description: "锚点 Y (0~1)" },
                     color: { type: "string", description: "HEX 颜色代码如 #FF0000" },
+                    opacity: { type: "number", description: "透明度 (0~255)" },
+                    skewX: { type: "number", description: "倾斜 X" },
+                    skewY: { type: "number", description: "倾斜 Y" },
                 },
                 required: ["id"],
             },

@@ -347,5 +347,40 @@
 
 ### 3. Texture2D -> SpriteFrame 子资源 UUID 自动解析
 
-- **问题**: AI 大模型在查找图片引用时，通常只知道 Texture2D (原图) 的 UUID，而 `cc.Sprite.spriteFrame` 实际引用的是其子资源 SpriteFrame 的 UUID，导致查找结果为空。
+- **问题**: AI 传入图片 (Texture2D) 的 UUID 时，`cc.Sprite.spriteFrame` 实际引用的是该图片的子资源 SpriteFrame（具有不同的 UUID），导致直接查找返回空结果。
 - **修复**: 在 `src/main.js` 的 `find_references` 路由中，调用 scene-script 前自动读取目标 UUID 对应资源的 `.meta` 文件，提取所有 `subMetas` 中的子资源 UUID (如 SpriteFrame)，作为 `additionalIds` 传递给 scene-script。scene-script 将这些额外 UUID 及其压缩/解压变体一并加入匹配列表，实现 "传入 Texture2D UUID 也能查到 SpriteFrame 引用" 的透明体验。
+
+---
+
+## 节点变换属性修复与数据增强 (2026-03-01)
+
+### 1. `update-node-transform` 属性设置方式修复 (`src/scene-script.js`)
+
+- **问题**: `update-node-transform` 中 `x`, `y`, `width`, `height`, `scaleX`, `scaleY` 六个属性通过异步 IPC `Editor.Ipc.sendToPanel("scene", "scene:set-property", ...)` 设置，存在 fire-and-forget 问题，函数在属性实际生效前就已返回成功回复。导致宽高不生效（Sprite 的 sizeMode 可能在异步消息到达前重置）、坐标不生效（异步 IPC 竞态条件）、批量操作属性丢失等问题。
+- **修复**: 将所有属性设置统一改为在 scene-script（渲染进程）中直接对节点属性同步赋值（如 `node.x = Number(x)`），与 `set-property` 和 `create-node` 中的处理方式保持一致。`color` 同步改为直接赋值 `node.color = new cc.Color().fromHEX(color)`。
+- **已验证**: 全部 7 个属性（x, y, width, height, scaleX, scaleY, color）批量设置后均即时生效。
+
+### 2. `update_node_transform` 工具参数扩展 (`src/main.js` + `src/scene-script.js`)
+
+- **问题**: 编辑器属性面板中的 Rotation、Anchor、Opacity、Skew 四类属性无法通过 `update_node_transform` MCP 工具设置和获取。
+- **修复**:
+    - 在 `src/main.js` 的工具 `inputSchema` 中新增 `rotation`, `anchorX`, `anchorY`, `opacity`, `skewX`, `skewY` 六个参数定义。
+    - 在 `src/scene-script.js` 的 `update-node-transform` 处理函数中新增对应的直接赋值逻辑（`node.angle`, `node.anchorX`, `node.anchorY`, `node.opacity`, `node.skewX`, `node.skewY`）。
+- **已验证**: 全部 13 个属性（x, y, rotation, width, height, scaleX, scaleY, anchorX, anchorY, color, opacity, skewX, skewY）批量设置后均即时生效。
+
+### 3. `get_scene_hierarchy` 节点详情数据增强 (`src/scene-script.js`)
+
+- **问题**: `includeDetails` 模式仅返回 position, scale, size 三类数据，缺少 rotation, anchor, color, opacity, skew, group 信息，无法通过 API 完整验证节点属性。
+- **修复**: 在 `dumpNodes` 函数的 `includeDetails` 分支中新增六个返回字段：
+    - `rotation`: `node.angle`
+    - `anchor`: `{ x: node.anchorX, y: node.anchorY }`
+    - `color`: `{ r: node.color.r, g: node.color.g, b: node.color.b }`
+    - `opacity`: `node.opacity`
+    - `skew`: `{ x: node.skewX, y: node.skewY }`
+    - `group`: `node.group`
+- **效果**: `includeDetails` 现在返回与编辑器属性面板完全一致的所有节点属性。
+
+### 4. Scene 面板未就绪友好提示 (`src/main.js`)
+
+- **问题**: 插件重载或场景切换期间调用 scene-script 方法时，原始错误 `Error: ipc failed to send, panel not found` 信息晦涩，容易让用户误以为插件出现严重故障。
+- **修复**: 在 `callSceneScriptWithTimeout` 的回调中检测 `panel not found` 错误，自动替换为友好中文提示：`场景面板尚未就绪（可能正在重载插件或切换场景），请等待几秒后重试`。日志级别从 `error` 降为 `warn`。
