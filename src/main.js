@@ -112,6 +112,73 @@ function callSceneScriptWithTimeout(pluginName, method, args, callback, timeout 
 }
 
 /**
+ * 生成 22 位 Base64 URL-safe 随机字符串，用作预制体 fileId
+ * 格式与 Cocos Creator 内置生成的 fileId 一致
+ * @returns {string} 22 位随机字符串
+ */
+function generateFileId() {
+    // 生成 16 字节随机数据，转为 base64url 后取前 22 位
+    return crypto.randomBytes(16).toString("base64").replace(/\+/g, "/").replace(/=/g, "").substring(0, 22);
+}
+
+/**
+ * 修复预制体文件中根节点的空 fileId 问题
+ * 自定义序列化管线故意将根节点的 fileId 留空（由此函数使用 crypto 生成更安全的 ID），
+ * 作为安全网确保根节点 PrefabInfo 始终具有有效的 fileId
+ * @param {string} prefabFspath 预制体文件的绝对路径
+ * @returns {boolean} 是否修复成功
+ */
+function fixPrefabRootFileId(prefabFspath) {
+    try {
+        if (!fs.existsSync(prefabFspath)) {
+            addLog("warn", `[fixPrefabRootFileId] 预制体文件不存在: ${prefabFspath}`);
+            return false;
+        }
+        const content = fs.readFileSync(prefabFspath, "utf8");
+        const data = JSON.parse(content);
+
+        if (!Array.isArray(data) || data.length === 0) {
+            addLog("warn", `[fixPrefabRootFileId] 预制体内容格式异常`);
+            return false;
+        }
+
+        // 找到根节点: cc.Prefab 的 data.__id__ 指向的节点
+        const prefabEntry = data[0];
+        if (!prefabEntry || prefabEntry.__type__ !== "cc.Prefab" || !prefabEntry.data) {
+            addLog("warn", `[fixPrefabRootFileId] 找不到 cc.Prefab 入口`);
+            return false;
+        }
+        const rootNodeIndex = prefabEntry.data.__id__;
+        const rootNode = data[rootNodeIndex];
+        if (!rootNode || !rootNode._prefab) {
+            addLog("warn", `[fixPrefabRootFileId] 根节点没有 _prefab 引用`);
+            return false;
+        }
+
+        // 找到根节点关联的 PrefabInfo
+        const prefabInfoIndex = rootNode._prefab.__id__;
+        const prefabInfo = data[prefabInfoIndex];
+        if (!prefabInfo || prefabInfo.__type__ !== "cc.PrefabInfo") {
+            addLog("warn", `[fixPrefabRootFileId] 根节点 _prefab 指向的不是 cc.PrefabInfo`);
+            return false;
+        }
+
+        // 检查并修复空 fileId
+        if (!prefabInfo.fileId || prefabInfo.fileId === "") {
+            prefabInfo.fileId = generateFileId();
+            fs.writeFileSync(prefabFspath, JSON.stringify(data, null, 2), "utf8");
+            addLog("success", `[fixPrefabRootFileId] 已修复根节点 fileId: ${prefabInfo.fileId}`);
+            return true;
+        }
+
+        return false; // 无需修复
+    } catch (e) {
+        addLog("error", `[fixPrefabRootFileId] 修复失败: ${e.message}`);
+        return false;
+    }
+}
+
+/**
  * 日志文件路径（懒初始化，在项目 settings 目录下）
  * @type {string|null}
  */
@@ -1189,7 +1256,6 @@ module.exports = {
                 break;
 
             case "create_prefab": {
-                const prefabDir = "db://assets";
                 // 先重命名节点以匹配预制体名称
                 Editor.Ipc.sendToPanel("scene", "scene:set-property", {
                     id: args.nodeId,
@@ -1198,11 +1264,11 @@ module.exports = {
                     value: args.prefabName,
                     isSubProp: false,
                 });
-                // scene:create-prefab 的正确签名: ([nodeUuids], dirPath)
+                // 【修复】使用自定义 9 步后处理管线：Editor.serialize() → 移除 cc.Scene → 添加 cc.Prefab/cc.PrefabInfo → 清空 _id
+                const prefabUrl = `db://assets/${args.prefabName}.prefab`;
                 setTimeout(() => {
-                    Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [args.nodeId], prefabDir);
+                    this._createPrefabViaSceneScript(args.nodeId, prefabUrl, callback);
                 }, 300);
-                callback(null, `命令已发送：正在创建预制体 '${args.prefabName}'`);
                 break;
             }
 
@@ -1401,6 +1467,48 @@ module.exports = {
      * @param {Object} args 参数
      * @param {Function} callback 完成回调
      */
+    /**
+     * 通过自定义场景脚本创建预制体
+     * scene-script 中 create-prefab 处理器将 Editor.serialize() 的场景格式输出
+     * 经过 9 步后处理转换为标准预制体格式（含 cc.Prefab、cc.PrefabInfo、清空 _id 等）
+     * @param {string} nodeId 要创建为预制体的节点 UUID
+     * @param {string} prefabUrl 预制体的 db:// 路径，如 db://assets/MyPrefab.prefab
+     * @param {Function} callback 完成回调 (err, result)
+     */
+    _createPrefabViaSceneScript(nodeId, prefabUrl, callback) {
+        callSceneScriptWithTimeout("mcp-bridge", "create-prefab", { nodeId }, (err, serializedData) => {
+            if (err) {
+                addLog("error", `[create-prefab] 序列化节点失败: ${err}`);
+                return callback(err);
+            }
+
+            if (!serializedData) {
+                return callback("序列化返回空数据");
+            }
+
+            // serializedData 是 Editor.serialize 返回的 JSON 字符串
+            // 直接作为 prefab 文件内容写入
+            Editor.assetdb.create(prefabUrl, serializedData, (createErr) => {
+                if (createErr) {
+                    addLog("error", `[create-prefab] 写入预制体文件失败: ${createErr}`);
+                    return callback(`创建预制体失败: ${createErr}`);
+                }
+
+                addLog("success", `[create-prefab] 预制体已创建: ${prefabUrl}`);
+
+                // 安全网：使用 crypto 生成更安全的 fileId 替换场景脚本中留空的根节点 fileId
+                setTimeout(() => {
+                    const prefabFspath = Editor.assetdb.urlToFspath(prefabUrl);
+                    if (prefabFspath) {
+                        fixPrefabRootFileId(prefabFspath);
+                    }
+                }, 500);
+
+                callback(null, `预制体已创建: ${prefabUrl}`);
+            });
+        });
+    },
+
     manageScript(args, callback) {
         const { action, path: scriptPath, content } = args;
 
@@ -1725,14 +1833,11 @@ export default class NewScript extends cc.Component {
                     isSubProp: false,
                 });
 
-                // 2. 发送创建命令 (参数: [uuids], dirPath)
-                // 注意: scene:create-prefab 第三个参数必须是 db:// 目录路径
-                // 【增强】增加延迟到 300ms，确保 IPC 消息处理并同步到底层引擎
+                // 2.【修复】使用自定义序列化替代内置 scene:create-prefab，避免根节点 PrefabInfo 损坏
+                const createdPrefabUrl = `${targetDir}/${prefabName}.prefab`;
                 setTimeout(() => {
-                    Editor.Ipc.sendToPanel("scene", "scene:create-prefab", [nodeId], targetDir);
+                    this._createPrefabViaSceneScript(nodeId, createdPrefabUrl, callback);
                 }, 300);
-
-                callback(null, `指令已发送: 从节点 ${nodeId} 在目录 ${targetDir} 创建名为 ${prefabName} 的预制体`);
                 break;
 
             case "save": // 兼容 AI 幻觉

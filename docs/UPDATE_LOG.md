@@ -384,3 +384,29 @@
 
 - **问题**: 插件重载或场景切换期间调用 scene-script 方法时，原始错误 `Error: ipc failed to send, panel not found` 信息晦涩，容易让用户误以为插件出现严重故障。
 - **修复**: 在 `callSceneScriptWithTimeout` 的回调中检测 `panel not found` 错误，自动替换为友好中文提示：`场景面板尚未就绪（可能正在重载插件或切换场景），请等待几秒后重试`。日志级别从 `error` 降为 `warn`。
+
+---
+
+## 预制体序列化格式修复 (2026-03-02)
+
+### 1. `create-prefab` 序列化输出格式修复 (`src/scene-script.js`)
+
+- **问题**: 通过 `create_prefab` 工具创建的预制体虽然不报错，但文件内容格式不正确，导致在编辑器中打开或使用时出现异常行为。
+- **原因**: `Editor.serialize(node)` 输出的是**场景格式**而非**预制体格式**，具体表现为：
+    1. ❌ 数组首元素为 `cc.Node` 而非 `cc.Prefab` 包装器。
+    2. ❌ 包含 `cc.Scene` 对象，根节点 `_parent` 指向 Scene。
+    3. ❌ 所有节点的 `_prefab` 字段为 `null`，缺少 `cc.PrefabInfo`。
+    4. ❌ 节点保留了运行时 `_id` 值（如 `"f6WlEh4IdCcKIheBW4zwk5"`），而预制体中应为空字符串。
+- **修复**: 在 `src/scene-script.js` 中重写 `create-prefab` 处理器，增加 9 步后处理管线将场景格式数据转换为标准预制体格式：
+    1. 解析 `Editor.serialize()` 返回的 JSON。
+    2. 识别并移除 `cc.Scene` 对象。
+    3. 构建旧索引到新索引的映射表。
+    4. 添加 `cc.Prefab` 根包装器（索引 0，`data` 指向根节点）。
+    5. 更新所有 `__id__` 引用为新索引。
+    6. 修复根节点 `_parent` 为 `null`。
+    7. 清空所有节点的 `_id` 为空字符串。
+    8. 为每个 `cc.Node` 生成 `cc.PrefabInfo`（含唯一 `fileId`、`root` 指向根节点、`asset` 指向 `cc.Prefab`）。
+    9. 序列化为 JSON 字符串返回。
+- **验证**: 创建的预制体文件结构与编辑器原生拖拽创建的预制体完全一致，可正常打开编辑、实例化使用，控制台零报错。
+
+ps: 感谢 @亮仔😂 😁 🐔否？ 提供的反馈以及操作日志

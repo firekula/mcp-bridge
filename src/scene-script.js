@@ -1383,4 +1383,199 @@ module.exports = {
                 break;
         }
     },
+
+    /**
+     * 自定义预制体创建：在场景进程中序列化节点树，并转换为正确的预制体格式
+     * 【修复】Editor.serialize() 输出的是场景格式（含 cc.Scene、无 cc.Prefab 和 cc.PrefabInfo），
+     *        需要后处理为 Cocos Creator 标准预制体格式
+     * @param {Object} event IPC 事件对象
+     * @param {Object} args 参数 (nodeId)
+     */
+    "create-prefab": function (event, args) {
+        const { nodeId } = args;
+
+        const node = findNode(nodeId);
+        if (!node) {
+            if (event.reply) event.reply(new Error(`找不到节点: ${nodeId}`));
+            return;
+        }
+
+        try {
+            // 第一步：使用 Editor.serialize 获取原始序列化数据（场景格式）
+            const serializedStr = Editor.serialize(node);
+            const sceneData = JSON.parse(serializedStr);
+
+            if (!Array.isArray(sceneData) || sceneData.length === 0) {
+                if (event.reply) event.reply(new Error("序列化数据格式异常"));
+                return;
+            }
+
+            // 第二步：识别并移除 cc.Scene 对象，找到真正的根节点
+            // Editor.serialize 输出格式：[根节点(cc.Node), cc.Scene, 子节点..., 组件...]
+            // 根节点的 _parent 指向 cc.Scene
+            let sceneIndex = -1;
+            for (let i = 0; i < sceneData.length; i++) {
+                if (sceneData[i].__type__ === "cc.Scene") {
+                    sceneIndex = i;
+                    break;
+                }
+            }
+
+            // 移除 cc.Scene 并构建旧索引到新索引的映射
+            let filteredData = [];
+            let oldToNewIndex = {};
+            let newIndex = 0;
+
+            // 先留出索引 0 给 cc.Prefab
+            newIndex = 1;
+
+            for (let i = 0; i < sceneData.length; i++) {
+                if (i === sceneIndex) {
+                    // 跳过 cc.Scene
+                    oldToNewIndex[i] = -1;
+                    continue;
+                }
+                oldToNewIndex[i] = newIndex;
+                filteredData.push(sceneData[i]);
+                newIndex++;
+            }
+
+            // 第三步：为每个 cc.Node 生成 cc.PrefabInfo
+            // 需要知道根节点在新数组中的索引
+            let rootNodeOldIndex = -1;
+            for (let i = 0; i < sceneData.length; i++) {
+                if (i === sceneIndex) continue;
+                if (sceneData[i].__type__ === "cc.Node") {
+                    // 根节点是 _parent 指向 cc.Scene 的那个，或者是第一个 cc.Node
+                    if (sceneData[i]._parent && sceneData[i]._parent.__id__ === sceneIndex) {
+                        rootNodeOldIndex = i;
+                        break;
+                    }
+                }
+            }
+            // 如果没有找到指向 Scene 的根节点，使用第一个 cc.Node
+            if (rootNodeOldIndex === -1) {
+                for (let i = 0; i < sceneData.length; i++) {
+                    if (i === sceneIndex) continue;
+                    if (sceneData[i].__type__ === "cc.Node") {
+                        rootNodeOldIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            const rootNodeNewIndex = oldToNewIndex[rootNodeOldIndex]; // 根节点在新数组中的索引
+
+            // 收集所有 cc.Node 的新索引，用于给每个节点附加 PrefabInfo
+            let nodeEntries = []; // { newIndex, isRoot }
+            for (let i = 0; i < filteredData.length; i++) {
+                if (filteredData[i].__type__ === "cc.Node") {
+                    nodeEntries.push({
+                        arrayIndex: i + 1, // +1 因为 cc.Prefab 在索引 0
+                        isRoot: i + 1 === rootNodeNewIndex,
+                    });
+                }
+            }
+
+            // 生成 fileId 的简单方法（与 main.js 中的 generateFileId 逻辑一致）
+            function generateFileId() {
+                const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                let result = "";
+                for (let i = 0; i < 22; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return result;
+            }
+
+            // 第四步：构建最终的预制体数据数组
+            // 结构: [cc.Prefab, 根节点(cc.Node), 子节点..., 组件..., cc.PrefabInfo...]
+            let prefabData = [];
+
+            // 索引 0: cc.Prefab 包装器
+            prefabData.push({
+                __type__: "cc.Prefab",
+                _name: "",
+                _objFlags: 0,
+                _native: "",
+                data: { __id__: rootNodeNewIndex },
+                optimizationPolicy: 0,
+                asyncLoadAssets: false,
+                readonly: false,
+            });
+
+            // 添加过滤后的数据（所有原始对象，除了 cc.Scene）
+            for (let i = 0; i < filteredData.length; i++) {
+                prefabData.push(filteredData[i]);
+            }
+
+            // 第五步：更新所有 __id__ 引用（使用旧到新的索引映射）
+            function updateRefs(obj) {
+                if (obj === null || obj === undefined || typeof obj !== "object") return;
+                if (Array.isArray(obj)) {
+                    obj.forEach(function (item) {
+                        updateRefs(item);
+                    });
+                    return;
+                }
+                for (let key in obj) {
+                    if (!obj.hasOwnProperty(key)) continue;
+                    if (key === "__id__" && typeof obj[key] === "number") {
+                        let oldIdx = obj[key];
+                        if (oldToNewIndex.hasOwnProperty(oldIdx)) {
+                            obj[key] = oldToNewIndex[oldIdx];
+                        }
+                    } else if (typeof obj[key] === "object" && obj[key] !== null) {
+                        updateRefs(obj[key]);
+                    }
+                }
+            }
+
+            // 更新 prefabData 中所有对象的 __id__ 引用（跳过索引 0 的 cc.Prefab，它的引用已经是新索引）
+            for (let i = 1; i < prefabData.length; i++) {
+                updateRefs(prefabData[i]);
+            }
+
+            // 第六步：修复根节点的 _parent 为 null
+            let rootNodeObj = prefabData[rootNodeNewIndex];
+            if (rootNodeObj) {
+                rootNodeObj._parent = null;
+            }
+
+            // 第七步：清空所有 _id 字段（预制体中节点的 _id 应为空，运行时由引擎分配）
+            for (let i = 1; i < prefabData.length; i++) {
+                if (prefabData[i]._id !== undefined) {
+                    prefabData[i]._id = "";
+                }
+            }
+
+            // 第八步：为每个 cc.Node 添加 cc.PrefabInfo
+            // PrefabInfo 追加在数组末尾
+            let prefabInfoStartIndex = prefabData.length;
+            for (let ni = 0; ni < nodeEntries.length; ni++) {
+                let entry = nodeEntries[ni];
+                let prefabInfoIndex = prefabInfoStartIndex + ni;
+
+                // 在节点上设置 _prefab 引用
+                let nodeObj = prefabData[entry.arrayIndex];
+                if (nodeObj) {
+                    nodeObj._prefab = { __id__: prefabInfoIndex };
+                }
+
+                // 创建 PrefabInfo 对象
+                prefabData.push({
+                    __type__: "cc.PrefabInfo",
+                    root: { __id__: rootNodeNewIndex },
+                    asset: { __id__: 0 },
+                    fileId: entry.isRoot ? "" : generateFileId(),
+                    sync: false,
+                });
+            }
+
+            // 第九步：序列化为 JSON 字符串
+            const result = JSON.stringify(prefabData, null, 2);
+            if (event.reply) event.reply(null, result);
+        } catch (e) {
+            if (event.reply) event.reply(new Error(`序列化节点失败: ${e.message}`));
+        }
+    },
 };
