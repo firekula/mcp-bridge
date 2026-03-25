@@ -223,6 +223,20 @@ setTimeout(() => {
 }, 10);
 ```
 
+### 6.4 坐标变换与 Widget 生命周期 (Transform & Widget)
+
+```javascript
+// ⚠️ 致命陷阱: 当分配 cc.Widget 属性后，绝不可在当前帧同步调用 widget.updateAlignment() 或强制设置 node.x/y。
+// 必须交由引擎的 Async LateUpdate/WidgetManager 计算。若同步执行将导致 Editor 视口脏矩阵反向污染 Widget 边距计算（导致坐标 2x 膨胀飞出屏幕）。
+if (args.layout) {
+    let widget = newNode.addComponent(cc.Widget);
+    widget.isAlignBottom = true;
+    widget.bottom = 0; // 只赋语义参数，不调 updateAlignment()
+}
+// 随后通过 scene:dirty 触发渲染引擎自动对齐
+Editor.Ipc.sendToMain("scene:dirty");
+```
+
 ---
 
 ## 7. 错误处理规范 (Error Handling)
@@ -276,3 +290,4 @@ Editor.assetdb.queryInfoByUrl(path, (err, info) => {
 | "sendToMain scene:stash-and-save failed" | 时序问题                              | 手动 Ctrl+S 保存                   |
 | `update-node-transform` 不支持 Undo      | 为解决异步 IPC 竞态问题，改用直接赋值 | 设计性 trade-off，保证属性即时生效 |
 | execute_menu_item 仅支持部分菜单         | 缺乏通用菜单 IPC                      | 添加菜单映射表                     |
+| 创建 UI 节点时坐标 2x 偏移飞出屏幕       | 新增节点同帧同步调用 `updateAlignment()` 会读取到脏的世界矩阵 | 只赋 Widget 语义属性（如 `bottom=0`），交由下一帧引擎自动对齐 |
