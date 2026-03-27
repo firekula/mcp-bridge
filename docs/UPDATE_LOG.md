@@ -484,3 +484,13 @@ ps: 感谢 @亮仔😂 😁 🐔否？ 提供的反馈以及操作日志
 ### 4. IPC 后处理情报反馈
 
 - **功能**: 组件及节点的构造结果不仅上报 UUID，同时通过 IPC 高效附上落点区域的解析报告（例如报告所依附的 Canvas 它的设计坐标与当前实时 Size），以便大语言模型即刻掌控全局视图坐标结构，减少后续调优瞎猜的次数。
+
+---
+
+## 节点变换增强与 Bug 修复 (2026-03-27)
+
+### 1. `update-node-transform` 支持 `active` 参数
+
+- **问题**: `update-node-transform` 中遗漏了对节点显隐 (`active`) 的参数处理，AI 无法直接修改节点的激活状态。
+- **修复**: 在 `src/scene-script.js` 的 `update-node-transform` 处理器中添加了对 `args.active` 的处理逻辑 (`node.active = !!args.active;`)。
+- **致谢**: 感谢社区245781780反馈并提供修复方案！

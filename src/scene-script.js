@@ -198,6 +198,9 @@ module.exports = {
             if (args.skewY !== undefined) {
                 node.skewY = Number(args.skewY);
             }
+            if (args.active !== undefined) {
+                node.active = !!args.active;
+            }
 
             Editor.Ipc.sendToMain("scene:dirty");
             Editor.Ipc.sendToAll("scene:node-changed", { uuid: id });
