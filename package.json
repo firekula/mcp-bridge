@@ -6,14 +6,14 @@
 	"main": "src/main.js",
 	"scene-script": "src/scene-script.js",
 	"main-menu": {
-		"MCP 桥接器/开启测试面板": {
+		"MCP 桥接器/开启MCP设置面板": {
 			"message": "mcp-bridge:open-test-panel"
 		}
 	},
 	"panel": {
 		"main": "panel/index.js",
 		"type": "dockable",
-		"title": "MCP 测试面板",
+		"title": "MCP 设置面板",
 		"width": 400,
 		"height": 300
 	},
