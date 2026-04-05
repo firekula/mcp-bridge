@@ -688,6 +688,19 @@ export = {
                     return;
                 }
 
+                // 容错：自动纠正 AI 可能混淆的 3.x 等组件名称
+                const COMPONENT_ALIAS_MAP: Record<string, string> = {
+                    "cc.BoxCollider2D": "cc.BoxCollider",
+                    "cc.Collider2D": "cc.Collider",
+                    "cc.TiledAtlas": "cc.TiledMap",
+                    "cc.UITransform": "cc.Widget",
+                    "cc.SpriteBox": "cc.Sprite",
+                };
+
+                if (COMPONENT_ALIAS_MAP[componentType]) {
+                    componentType = COMPONENT_ALIAS_MAP[componentType];
+                }
+
                 // 【防呆设计】拦截 AI 错误地将 cc.Node 作为组件添加
                 if (componentType === "cc.Node" || componentType === "Node") {
                     if (event.reply) {
@@ -734,7 +747,16 @@ export = {
                     }
 
                     // 添加组件
-                    const component = node.addComponent(compClass);
+                    let component = node.addComponent(compClass);
+
+                    if (!component) {
+                        // 引擎底层 (如 _checkMultipleComp) 可能拦截了唯一组件，导致返回 null
+                        component = node.getComponent(compClass);
+                        if (!component) {
+                            if (event.reply) event.reply(new Error(`添加组件失败，引擎返回 null 且未找到已有同类组件: ${componentType}`));
+                            return;
+                        }
+                    }
 
                     // 设置属性
                     if (properties) {
