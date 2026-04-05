@@ -3,7 +3,7 @@
  * 负责在标准 MCP 客户端 (stdin/stdout) 与 Cocos Creator 插件 (HTTP) 之间转发请求。
  */
 
-const http = require("http");
+import * as http from "http";
 
 /**
  * 当前 Cocos Creator 插件监听的端口
@@ -16,12 +16,12 @@ const COCOS_PORT = parseInt(process.env.MCP_BRIDGE_PORT || process.argv[2] || "3
  * 发送调试日志到标准的错误输出流水
  * @param {string} msg 日志消息
  */
-function debugLog(msg) {
+function debugLog(msg: string) {
     process.stderr.write(`[代理调试] ${msg}\n`);
 }
 
 // 监听标准输入以获取 MCP 请求
-process.stdin.on("data", (data) => {
+process.stdin.on("data", (data: Buffer) => {
     const lines = data.toString().split("\n");
     lines.forEach((line) => {
         if (!line.trim()) return;
@@ -38,7 +38,7 @@ process.stdin.on("data", (data) => {
  * 处理 JSON-RPC 请求
  * @param {Object} req RPC 请求对象
  */
-function handleRequest(req) {
+function handleRequest(req: any) {
     const { method, id, params } = req;
 
     // 处理握手初始化
@@ -86,10 +86,10 @@ function handleRequest(req) {
  * @param {string|number} id RPC 请求标识符
  * @param {string} method HTTP 方法 (默认 POST)
  */
-function forwardToCocos(path, payload, id, method = "POST") {
+function forwardToCocos(path: string, payload: any, id: string | number | undefined, method = "POST") {
     const postData = payload ? JSON.stringify(payload) : "";
 
-    const options = {
+    const options: http.RequestOptions = {
         hostname: "127.0.0.1",
         port: COCOS_PORT,
         path: path,
@@ -97,7 +97,7 @@ function forwardToCocos(path, payload, id, method = "POST") {
         headers: { "Content-Type": "application/json" },
     };
 
-    if (postData) {
+    if (postData && options.headers) {
         options.headers["Content-Length"] = Buffer.byteLength(postData);
     }
 
@@ -135,7 +135,7 @@ function forwardToCocos(path, payload, id, method = "POST") {
  * 将结果发送给 AI (通过标准输出)
  * @param {Object} obj 结果对象
  */
-function sendToAI(obj) {
+function sendToAI(obj: any) {
     process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
@@ -145,6 +145,6 @@ function sendToAI(obj) {
  * @param {number} code 错误码
  * @param {string} message 错误消息
  */
-function sendError(id, code, message) {
+function sendError(id: string | number | undefined, code: number, message: string) {
     sendToAI({ jsonrpc: "2.0", id: id, error: { code, message } });
 }

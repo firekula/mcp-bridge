@@ -1,17 +1,20 @@
 {
 	"name": "mcp-bridge",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Cocos Creator MCP 桥接插件",
 	"author": "Firekula",
-	"main": "src/main.js",
-	"scene-script": "src/scene-script.js",
+	"main": "dist/main.js",
+	"scene-script": "dist/scene-script.js",
+	"scripts": {
+		"build": "tsc && esbuild src/main.ts --bundle --platform=node --target=es2018 --external:ws --external:@modelcontextprotocol/sdk --external:vue --outfile=dist/main.js && esbuild src/scene-script.ts --bundle --platform=node --target=es2018 --outfile=dist/scene-script.js && esbuild src/panel/index.ts --bundle --platform=node --target=es2018 --external:electron --outfile=dist/panel/index.js && esbuild src/mcp-proxy.ts --bundle --platform=node --target=es2018 --outfile=dist/mcp-proxy.js"
+	},
 	"main-menu": {
 		"MCP 桥接器/开启MCP设置面板": {
 			"message": "mcp-bridge:open-test-panel"
 		}
 	},
 	"panel": {
-		"main": "panel/index.js",
+		"main": "dist/panel/index.js",
 		"type": "dockable",
 		"title": "MCP 设置面板",
 		"width": 400,
@@ -34,5 +37,11 @@
 				"querySpriteFrameUuid"
 			]
 		}
+	},
+	"devDependencies": {
+		"esbuild": "^0.25.0",
+		"typescript": "^5.7.0",
+		"@types/node": "^22.0.0",
+		"@types/ws": "^8.5.14"
 	}
 }

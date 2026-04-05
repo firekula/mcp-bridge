@@ -505,3 +505,13 @@ ps: 感谢 @亮仔😂 😁 🐔否？ 提供的反馈以及操作日志
 - **问题**: `update-node-transform` 中遗漏了对节点显隐 (`active`) 的参数处理，AI 无法直接修改节点的激活状态。
 - **修复**: 在 `src/scene-script.js` 的 `update-node-transform` 处理器中添加了对 `args.active` 的处理逻辑 (`node.active = !!args.active;`)。
 - **致谢**: 感谢社区245781780反馈并提供修复方案！
+
+---
+
+## 自动化工具链配置 (2026-04-05)
+
+### 1. 新增 MCP 客户端自动化配置扫描与注入 (`auto-mcp-settings`)
+
+- **功能**: 添加了一键扫描并向宿主端 AI 平台（如 Claude, Trae, Antigravity 等）注入 MCP 本地服务地址到其全局配置文件的功能。
+- **UI 面板**: 在测试面板中新增"MCP 配置"选项卡，提供直观的下拉列表以及系统配置破坏检测分析机制。
+- **原理解耦**: 新增底层逻辑 `src/McpConfigurator.js`。通过增加数个不涉及操作场景渲染周期的纯 Node.js I/O 的 IPC 总线解决写入需求，百分百不引入架构风险。

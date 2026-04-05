@@ -1,18 +1,19 @@
+
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * IPC 消息管理器
  * 负责解析 IPC 文档并执行消息测试
  */
-class IpcManager {
+export class IpcManager {
     /**
      * 获取所有 IPC 消息列表
      * @returns {Array} 消息定义列表
      */
-    static getIpcMessages() {
+    static getIpcMessages(): any[] {
         // 获取文档路径
         const docPath = Editor.url("packages://mcp-bridge/docs/IPC_MESSAGES.md");
         if (!fs.existsSync(docPath)) {
@@ -21,7 +22,7 @@ class IpcManager {
         }
 
         const content = fs.readFileSync(docPath, "utf-8");
-        const messages = [];
+        const messages: any[] = [];
 
         // 正则匹配 ### `message-name`
         const regex = /### `(.*?)`\r?\n([\s\S]*?)(?=### `|$)/g;
@@ -75,7 +76,7 @@ class IpcManager {
      * @param {*} args 参数
      * @returns {Promise} 测试结果
      */
-    static testIpcMessage(name, args) {
+    static testIpcMessage(name: string, args: any): Promise<{success: boolean; message: string}> {
         if (args === undefined) args = null;
         return new Promise((resolve) => {
             try {
@@ -85,11 +86,9 @@ class IpcManager {
                 } else {
                     resolve({ success: false, message: "Editor.Ipc.sendToMain 不可用" });
                 }
-            } catch (e) {
+            } catch (e: any) {
                 resolve({ success: false, message: `错误: ${e.message}` });
             }
         });
     }
 }
-
-module.exports = { IpcManager };

@@ -1,3 +1,4 @@
+
 "use strict";
 
 /**
@@ -22,7 +23,7 @@ const findNode = (id) => {
     return node;
 };
 
-module.exports = {
+export = {
     /**
      * 修改节点的基础属性
      * @param {Object} event IPC 事件对象
@@ -95,7 +96,7 @@ module.exports = {
                 return null;
             }
 
-            let nodeData = {
+            let nodeData: any = {
                 name: node.name,
                 uuid: node.uuid,
                 childrenCount: node.childrenCount,
@@ -520,7 +521,7 @@ module.exports = {
 
                         if (isAsset || isAssetArray) {
                             // 1. 处理资源引用 (单个或数组)
-                            const uuids = isAssetArray ? value : [value];
+                            const uuids: any[] = isAssetArray ? (value as any[]) : [value];
                             const loadedAssets = [];
                             let loadedCount = 0;
 
@@ -640,7 +641,7 @@ module.exports = {
                                         );
                                     }
                                 }
-                            } else if (value && value.length > 20) {
+                            } else if (value && (value as string).length > 20) {
                                 // 如果明确是组件/节点类型但找不到，才报错
                                 Editor.warn(`[scene-script] 无法解析 ${key} 的目标节点/组件: ${value}`);
                             }

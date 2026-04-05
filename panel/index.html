@@ -1,8 +1,8 @@
 <div class="mcp-container">
 	<div class="tabs">
 		<ui-button id="tabMain" class="tab-button active">主页</ui-button>
-		<ui-button id="tabTest" class="tab-button">工具测试</ui-button>
-		<ui-button id="tabIpc" class="tab-button">IPC 测试</ui-button>
+
+		<ui-button id="tabConfig" class="tab-button">MCP 配置</ui-button>
 	</div>
 
 	<div id="panelMain" class="tab-content active">
@@ -22,97 +22,20 @@
 		<div id="logConsole" class="log-view"></div>
 	</div>
 
-	<div id="panelTest" class="tab-content">
-		<!-- ... existing content ... -->
-		<div class="test-layout">
-			<div class="left-panel" id="testLeftPanel">
-				<div class="form-item">
-					<label>工具名称:</label>
-					<ui-input id="toolName" placeholder="选中下方列表填充"></ui-input>
-				</div>
-				<label>可用工具列表:</label>
-				<div class="tools-list" id="toolsList"></div>
-			</div>
-
-			<!-- 拖动条 -->
-			<div class="resizer" id="testResizer"></div>
-
-			<div class="right-panel">
-				<div class="tool-description">
-					<label>工具说明:</label>
-					<div id="toolDescription" class="description-box">选择工具查看说明</div>
-				</div>
-				<div class="flex-v">
-					<label>工具参数 (JSON):</label>
-					<textarea id="toolParams" spellcheck="false" placeholder="{}"></textarea>
-				</div>
-				<div class="button-group">
-					<ui-button id="testBtn" class="green">测试工具</ui-button>
-					<ui-button id="listToolsBtn">刷新列表</ui-button>
-					<ui-button id="clearTestBtn">清空结果</ui-button>
-					<ui-button id="probeApisBtn">探查 API</ui-button>
-				</div>
-				<div class="flex-v">
-					<label>测试结果:</label>
-					<textarea id="resultContent" readonly spellcheck="false"></textarea>
-				</div>
-			</div>
+	<div id="panelConfig" class="tab-content" style="padding: 15px; color: #ccc;">
+		<h4 style="margin: 0 0 15px 0;">⚡ 自动化工具链配置</h4>
+		<div style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+			<label>宿主平台:</label>
+			<select id="mcpClientSelect"
+				style="width:160px; background: #333; color: #ccc; border: 1px solid #555; height: 25px; outline: none;"></select>
+			<ui-button id="btnRefreshMcp" class="transparent">↻ 刷新</ui-button>
 		</div>
-	</div>
-
-	<div id="panelIpc" class="tab-content">
-		<div class="toolbar">
-			<ui-button id="btnScanIpc">扫描消息</ui-button>
-			<select
-				id="ipcFilter"
-				style="margin-left: 5px; background: #333; color: #ccc; border: 1px solid #555; height: 25px"
-			>
-				<option value="all">全部显示</option>
-				<option value="available">仅显示可用</option>
-				<option value="unavailable">仅显示不可用</option>
-				<option value="untested">仅显示未测试</option>
-			</select>
-			<div class="spacer"></div>
-			<ui-button id="btnTestIpc" class="green">测试选中项</ui-button>
-		</div>
-		<div class="ipc-container" style="display: flex; flex: 1; flex-direction: column; min-height: 0">
-			<div class="ipc-list-header" style="padding: 5px; background: #222; border-bottom: 1px solid #444">
-				<ui-checkbox id="cbSelectAllIpc">全选/反选</ui-checkbox>
-			</div>
-			<div
-				id="ipcList"
-				class="ipc-list"
-				style="flex: 1; overflow-y: auto; background: #1e1e1e; border: 1px solid #444"
-			></div>
-			<div style="padding: 5px; border-top: 1px solid #444; display: flex; flex-direction: column">
-				<label>参数 (JSON):</label>
-				<textarea
-					id="ipcParams"
-					placeholder='例如: {"uuid": "..."}'
-					style="
-						height: 50px;
-						width: 100%;
-						box-sizing: border-box;
-						background: #222;
-						color: #ccc;
-						border: 1px solid #444;
-						margin-bottom: 5px;
-					"
-				></textarea>
-			</div>
-			<div
-				style="
-					height: 100px;
-					display: flex;
-					flex-direction: column;
-					border-top: 1px solid #444;
-					padding-top: 5px;
-				"
-			>
-				<label>测试日志:</label>
-				<textarea id="ipcLog" readonly style="flex: 1; font-family: monospace; font-size: 10px"></textarea>
-			</div>
-		</div>
+		<div id="mcpConfigStatus"
+			style="margin-bottom: 15px; background: #222; border: 1px solid #444; padding: 10px; border-radius: 4px; line-height: 1.6;">
+			等待扫描...</div>
+		<ui-button id="btnInjectMcp" class="green">一键配置当前选择平台</ui-button>
+		<hr style="border-color: #444; margin: 20px 0;">
+		<ui-button id="btnInjectAll">尝试向所有平台分发配置</ui-button>
 	</div>
 </div>
 
@@ -226,115 +149,5 @@
 	.time {
 		color: #5c6370;
 		margin-right: 8px;
-	}
-
-	/* Test Panel */
-	.test-layout {
-		display: flex;
-		flex: 1;
-		min-height: 0;
-	}
-
-	.left-panel {
-		width: 250px;
-		min-width: 150px;
-		max-width: 500px;
-		display: flex;
-		flex-direction: column;
-		flex-shrink: 0;
-		min-height: 0;
-	}
-
-	.resizer {
-		width: 6px;
-		cursor: col-resize;
-		background: #1a1a1a;
-		flex-shrink: 0;
-	}
-
-	.resizer:hover {
-		background: #4caf50;
-	}
-
-	.right-panel {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		padding-left: 5px;
-	}
-
-	.tools-list {
-		flex: 1;
-		background: #222;
-		border: 1px solid #444;
-		overflow-y: auto;
-		margin-top: 5px;
-	}
-
-	.tool-item {
-		padding: 6px;
-		border-bottom: 1px solid #333;
-		cursor: pointer;
-		font-size: 11px;
-	}
-
-	.tool-item:hover {
-		background: #444;
-	}
-
-	.flex-v {
-		display: flex;
-		flex-direction: column;
-		flex: 1;
-		min-height: 0;
-	}
-
-	textarea {
-		width: 100%;
-		background: #222;
-		color: #ccc;
-		border: 1px solid #444;
-		padding: 5px;
-		font-family: monospace;
-		resize: none;
-	}
-
-	#toolParams {
-		height: 120px;
-		flex-shrink: 0;
-	}
-
-	#resultContent {
-		flex: 1;
-	}
-
-	.button-group {
-		display: flex;
-		gap: 5px;
-		padding: 5px 0;
-	}
-
-	label {
-		font-size: 11px;
-		color: #888;
-		margin: 4px 0;
-	}
-
-	.tool-description {
-		margin-bottom: 10px;
-	}
-
-	.description-box {
-		background: #222;
-		color: #ccc;
-		border: 1px solid #444;
-		padding: 8px;
-		font-size: 11px;
-		line-height: 1.4;
-		min-height: 60px;
-		max-height: 120px;
-		overflow-y: auto;
-		border-radius: 2px;
 	}
 </style>
