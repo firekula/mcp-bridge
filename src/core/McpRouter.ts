@@ -3,7 +3,8 @@ import { CommandQueue } from "./CommandQueue";
 import { getToolsList } from "../tools/ToolRegistry";
 import { ToolDispatcher } from "../tools/ToolDispatcher";
 import { McpWrappers } from "./McpWrappers";
-
+import { HttpServer } from "./HttpServer";
+import { IpcManager } from "../IpcManager";
 export class McpRouter {
 	public static handleRequest(req: any, res: any) {
 		const url = req.url;
@@ -14,6 +15,22 @@ export class McpRouter {
 			Logger.info(`AI Client requested tool list`);
 			res.writeHead(200);
 			return res.end(JSON.stringify({ tools: tools }));
+		}
+
+		if (url === "/mcp-status") {
+			try {
+				const projectPath = (global as any).Editor ? (global as any).Editor.Project.path : process.cwd();
+				res.writeHead(200);
+				res.end(JSON.stringify({ 
+					port: HttpServer.config.port, 
+					projectName: require('path').basename(projectPath), 
+					projectPath: projectPath
+				}));
+			} catch (e) {
+				res.writeHead(500);
+				res.end(JSON.stringify({ error: String(e) }));
+			}
+			return;
 		}
 
 		if (url === "/list-resources") {
