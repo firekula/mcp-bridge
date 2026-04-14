@@ -317,16 +317,27 @@ export class ToolDispatcher {
 				break;
 
 			case "create_prefab": {
+				let prefabUrl, nodeName;
+				if (args.prefabName.startsWith("db://")) {
+					prefabUrl = args.prefabName.endsWith(".prefab") ? args.prefabName : args.prefabName + ".prefab";
+					// 提取 basename 作为节点名称，并移除 .prefab 后缀
+					const rawName = prefabUrl.substring(prefabUrl.lastIndexOf("/") + 1);
+					nodeName = rawName.replace(/\.prefab$/, "");
+				} else {
+					nodeName = args.prefabName;
+					prefabUrl = `db://assets/${nodeName}.prefab`;
+				}
+
 				// 先重命名节点以匹配预制体名称
 				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
 					id: args.nodeId,
 					path: "name",
 					type: "String",
-					value: args.prefabName,
+					// 注意：节点名称不允许带有斜杠，使用纯标识符名称
+					value: nodeName,
 					isSubProp: false,
 				});
 				// 【修复】使用自定义 9 步后处理管线：Editor.serialize() → 移除 cc.Scene → 添加 cc.Prefab/cc.PrefabInfo → 清空 _id
-				const prefabUrl = `db://assets/${args.prefabName}.prefab`;
 				setTimeout(() => {
 					ToolDispatcher._createPrefabViaSceneScript(args.nodeId, prefabUrl, callback);
 				}, 300);

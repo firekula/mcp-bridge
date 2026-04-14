@@ -93,7 +93,7 @@ export const getToolsList = () => {
 				type: "object",
 				properties: {
 					nodeId: { type: "string", description: "节点 UUID" },
-					prefabName: { type: "string", description: "预制体名称" },
+					prefabName: { type: "string", description: "预制体名称或包含完整路径的名称（如 MyPrefab 或 db://assets/prefabs/MyPrefab.prefab）" },
 				},
 				required: ["nodeId", "prefabName"],
 			},
