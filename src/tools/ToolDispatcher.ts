@@ -1562,19 +1562,9 @@ CCProgram fs %{
 				callback(`执行 IPC ${ipcMsg} 失败: ${err.message}`);
 			}
 		} else {
-			// 对于未在映射表中的菜单，尝试通用的 menu:click (虽然不一定有效)
-			// 或者直接返回不支持的警告
-			// addLog("warn", `支持映射表中找不到菜单项 '${menuPath}'。尝试通过旧版模式执行。`);
-
-			// 尝试通用调用
-			try {
-				// 注意：Cocos Creator 2.x 的 menu:click 通常需要 Electron 菜单 ID，而不只是路径
-				// 这里做个尽力而为的尝试
-				Editor.Ipc.sendToMain("menu:click", menuPath);
-				callback(null, `通用菜单动作已发送: ${menuPath} (仅支持项保证成功)`);
-			} catch (e) {
-				callback(`执行菜单项失败: ${menuPath}`);
-			}
+			// 杜绝 AI 幻觉，移除不存在的 menu:click 调用
+			// 直接返回明确的失败并引导扩展 menuMap
+			callback(`不支持执行非预设菜单路径: ${menuPath}。如确需该菜单，请在 ToolDispatcher 的 menuMap 中补充真正的 IPC 消息映射。`);
 		}
 	}
 
