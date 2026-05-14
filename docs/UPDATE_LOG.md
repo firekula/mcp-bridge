@@ -6,12 +6,22 @@
 
 ### 1. `db://` 根路径自动纠正为 `db://assets`
 
-- **问题**: 用户在 `search_project` 工具中使用 `path: "db://"` 进行搜索时，`Editor.assetdb.urlToFspath("db://")` 返回无效路径，导致报错"无效的搜索路径: db://"。
-- **修复**: 在 `McpWrappers.ts` 的 `searchProject` 方法中增加路径规范化逻辑。当 `searchPath` 为 `"db://"` 或 `"db:"` 时，自动纠正为 `"db://assets"`，确保搜索能够正常执行。
+- **问题**: 用户在 `search_project` 工具中使用 `path: “db://”` 进行搜索时，`Editor.assetdb.urlToFspath(“db://”)` 返回无效路径，导致报错”无效的搜索路径: db://”。
+- **修复**: 在 `McpWrappers.ts` 的 `searchProject` 方法中增加路径规范化逻辑。当 `searchPath` 为 `”db://”` 或 `”db:”` 时，自动纠正为 `”db://assets”`，确保搜索能够正常执行。
+
+---
+
+## 菜单执行幻觉修复 (2026-04-14)
+
+### 1. `execute_menu_item` 防幻觉改造
+
+- **问题**: 在找不到映射关系时，代码试图盲猜并强制调用 `Editor.Ipc.sendToMain(“menu:click”, menuPath)`，虽然此 IPC 并不存在且不会获得结果，但在当前逻辑下最终仍会返回成功。这种静默阻塞极大地引发了大模型陷入自我欺骗的连续幻觉并阻碍工具链推进。
+- **修复**: 正式切除对该”不存在动作”的尽力而为模拟尝试。当发生非预设路径请求时，立即回调返回中断信号，严正通报不支持的行为，促使 AI 回到正确的执行路线。
 
 ---
 
 ## 新增功能与工具 (2026-02-10)
+
 
 ### 1. `manage_shader` 工具 (新增)
 

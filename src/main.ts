@@ -122,7 +122,8 @@ export = {
 			event.reply(null, {
 				config: HttpServer.config,
 				logs: Logger.getLogs(),
-				autoStart: profile.get("auto-start"), // 返回自动启动状态
+				autoStart: profile.get("auto-start"),
+				configuredPort: profile.get('last-port') || 3456
 			});
 		},
 

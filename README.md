@@ -305,6 +305,16 @@ mcp-bridge/
 - **描述**: 获取当前激活的编辑器环境数据
 - **参数**: 无（返回 `path`, `version`, `openScene` 状态）
 
+### 29. get_active_instances
+
+- **描述**: 扫描并获取当前本地所有正在运行的 `mcp-bridge` 实例，返回各自对应的端口及项目根路径。
+- **参数**: 无
+
+### 30. set_active_instance
+
+- **描述**: 当存在多个运行实例时，显式指定 AI 工具流路由至特定端口的工程绑定。
+- **参数**: `port` (目标端口号)
+
 ## 开发指南
 
 ### 添加新 MCP 工具
@@ -342,6 +352,10 @@ npm run build
 ## 更新日志
 
 请查阅 [UPDATE_LOG.md](./UPDATE_LOG.md) 了解详细的版本更新历史。
+
+## 联系方式
+
+如有问题或建议，请联系：firekula@foxmail.com
 
 ## 许可证
 

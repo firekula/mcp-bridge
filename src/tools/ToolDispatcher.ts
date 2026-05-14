@@ -317,16 +317,27 @@ export class ToolDispatcher {
 				break;
 
 			case "create_prefab": {
+				let prefabUrl, nodeName;
+				if (args.prefabName.startsWith("db://")) {
+					prefabUrl = args.prefabName.endsWith(".prefab") ? args.prefabName : args.prefabName + ".prefab";
+					// 提取 basename 作为节点名称，并移除 .prefab 后缀
+					const rawName = prefabUrl.substring(prefabUrl.lastIndexOf("/") + 1);
+					nodeName = rawName.replace(/\.prefab$/, "");
+				} else {
+					nodeName = args.prefabName;
+					prefabUrl = `db://assets/${nodeName}.prefab`;
+				}
+
 				// 先重命名节点以匹配预制体名称
 				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
 					id: args.nodeId,
 					path: "name",
 					type: "String",
-					value: args.prefabName,
+					// 注意：节点名称不允许带有斜杠，使用纯标识符名称
+					value: nodeName,
 					isSubProp: false,
 				});
 				// 【修复】使用自定义 9 步后处理管线：Editor.serialize() → 移除 cc.Scene → 添加 cc.Prefab/cc.PrefabInfo → 清空 _id
-				const prefabUrl = `db://assets/${args.prefabName}.prefab`;
 				setTimeout(() => {
 					ToolDispatcher._createPrefabViaSceneScript(args.nodeId, prefabUrl, callback);
 				}, 300);
@@ -1562,19 +1573,9 @@ CCProgram fs %{
 				callback(`执行 IPC ${ipcMsg} 失败: ${err.message}`);
 			}
 		} else {
-			// 对于未在映射表中的菜单，尝试通用的 menu:click (虽然不一定有效)
-			// 或者直接返回不支持的警告
-			// addLog("warn", `支持映射表中找不到菜单项 '${menuPath}'。尝试通过旧版模式执行。`);
-
-			// 尝试通用调用
-			try {
-				// 注意：Cocos Creator 2.x 的 menu:click 通常需要 Electron 菜单 ID，而不只是路径
-				// 这里做个尽力而为的尝试
-				Editor.Ipc.sendToMain("menu:click", menuPath);
-				callback(null, `通用菜单动作已发送: ${menuPath} (仅支持项保证成功)`);
-			} catch (e) {
-				callback(`执行菜单项失败: ${menuPath}`);
-			}
+			// 杜绝 AI 幻觉，移除不存在的 menu:click 调用
+			// 直接返回明确的失败并引导扩展 menuMap
+			callback(`不支持执行非预设菜单路径: ${menuPath}。如确需该菜单，请在 ToolDispatcher 的 menuMap 中补充真正的 IPC 消息映射。`);
 		}
 	}
 
