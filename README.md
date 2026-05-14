@@ -353,6 +353,10 @@ npm run build
 
 请查阅 [UPDATE_LOG.md](./UPDATE_LOG.md) 了解详细的版本更新历史。
 
+## 联系方式
+
+如有问题或建议，请联系：firekula@foxmail.com
+
 ## 许可证
 
 GNU AFFERO GENERAL PUBLIC LICENSE Version 3, 19 November 2007
