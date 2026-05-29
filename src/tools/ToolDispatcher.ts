@@ -328,19 +328,8 @@ export class ToolDispatcher {
 					prefabUrl = `db://assets/${nodeName}.prefab`;
 				}
 
-				// 先重命名节点以匹配预制体名称
-				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-					id: args.nodeId,
-					path: "name",
-					type: "String",
-					// 注意：节点名称不允许带有斜杠，使用纯标识符名称
-					value: nodeName,
-					isSubProp: false,
-				});
-				// 【修复】使用自定义 9 步后处理管线：Editor.serialize() → 移除 cc.Scene → 添加 cc.Prefab/cc.PrefabInfo → 清空 _id
-				setTimeout(() => {
-					ToolDispatcher._createPrefabViaSceneScript(args.nodeId, prefabUrl, callback);
-				}, 300);
+				// 节点重命名已移至 scene-script 的 create-prefab 中同步执行，消除 IPC 竞态
+				ToolDispatcher._createPrefabViaSceneScript(args.nodeId, prefabUrl, nodeName, callback);
 				break;
 			}
 
@@ -560,8 +549,8 @@ export class ToolDispatcher {
 	 * @param {Function} callback 完成回调 (err, result)
 	 */
 
-  static _createPrefabViaSceneScript(nodeId, prefabUrl, callback) {
-		CommandQueue.callSceneScriptWithTimeout("mcp-bridge", "create-prefab", { nodeId }, (err, serializedData) => {
+  static _createPrefabViaSceneScript(nodeId, prefabUrl, nodeName, callback) {
+		CommandQueue.callSceneScriptWithTimeout("mcp-bridge", "create-prefab", { nodeId, nodeName }, (err, serializedData) => {
 			if (err) {
 				// addLog("error", `[create-prefab] 序列化节点失败: ${err}`);
 				return callback(err);
@@ -917,23 +906,9 @@ export default class NewScript extends cc.Component {
 				const fileName = prefabPath.substring(prefabPath.lastIndexOf("/") + 1);
 				const prefabName = fileName.replace(".prefab", "");
 
-				// 1. 重命名节点以匹配预制体名称
-				Editor.Ipc.sendToPanel("scene", "scene:set-property", {
-					id: nodeId,
-					path: "name",
-					type: "String",
-					value: prefabName,
-					isSubProp: false,
-				});
-
-				// 2.【修复】使用自定义序列化替代内置 scene:create-prefab，避免根节点 PrefabInfo 损坏
-				// _createPrefabViaSceneScript 内部调用 Editor.assetdb.create()，
-				// 前置通过 _ensureParentDir 等待真实目录建立完备
+				// 节点重命名已移至 scene-script 的 create-prefab 中同步执行，消除 IPC 竞态
 				const createdPrefabUrl = `${targetDir}/${prefabName}.prefab`;
-
-				// 对于预制体，_createPrefabViaSceneScript 需要在内部采用 _safeCreateAsset
-				// 所以我们这里直接调用，将逻辑下放到内部
-				ToolDispatcher._createPrefabViaSceneScript(nodeId, createdPrefabUrl, callback);
+				ToolDispatcher._createPrefabViaSceneScript(nodeId, createdPrefabUrl, prefabName, callback);
 				break;
 
 			case "save": // 兼容 AI 幻觉

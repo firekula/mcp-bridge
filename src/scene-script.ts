@@ -1542,7 +1542,7 @@ export = {
      * @param {Object} args 参数 (nodeId)
      */
     "create-prefab": function (event, args) {
-        const { nodeId } = args;
+        const { nodeId, nodeName } = args;
 
         const node = findNode(nodeId);
         if (!node) {
@@ -1550,9 +1550,24 @@ export = {
             return;
         }
 
+        // 保存原始状态，序列化完成后恢复
+        const originalParent = node.parent;
+        const originalName = node.name;
+
+        // 临时 detach 节点：Editor.serialize 会从场景根开始序列化整个场景树。
+        // 将 node.parent 置为 null 可以欺骗序列化器，使其仅序列化目标节点及其子树。
+        node.parent = null;
+        if (nodeName) {
+            node.name = nodeName;
+        }
+
         try {
             // 第一步：使用 Editor.serialize 获取原始序列化数据（场景格式）
             const serializedStr = Editor.serialize(node);
+
+            // 序列化完成后立即恢复节点原始状态
+            node.parent = originalParent;
+            node.name = originalName;
             const sceneData = JSON.parse(serializedStr);
 
             if (!Array.isArray(sceneData) || sceneData.length === 0) {

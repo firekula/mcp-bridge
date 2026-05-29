@@ -1,5 +1,15 @@
 # 更新日志 (UPDATE_LOG)
 
+## [1.2.2] - 2026-05-29
+### Fixed
+- **预制体根节点错误修复**: 修复 `create_prefab` / `prefab_management` 创建的预制体内部根节点永远为 Canvas 而非目标节点的问题。
+  > **根因分析**：`Editor.serialize(node)` 在 Cocos Creator 2.x 中会从场景根节点开始序列化整个场景树，无论传入哪个节点，序列化输出的第一个 `cc.Node` 始终是场景根节点（Canvas）。后处理管线以第一个 `cc.Node` 作为预制体根节点，导致预制体内部永远包含 Canvas 及其完整祖先链。
+  > **修复方案**：在 scene-script 的 `create-prefab` 中，调用 `Editor.serialize()` 之前将目标节点临时 detach（`node.parent = null`），欺骗序列化器使其仅序列化目标节点及其子树。序列化完成后立即恢复 `node.parent` 和 `node.name`，保证场景状态不受影响。同时将节点重命名逻辑从不可靠的异步 IPC（`scene:set-property` + `setTimeout(300ms)`）移至 scene-script 内部同步执行，消除竞态条件。
+
+### Changed
+- **`_createPrefabViaSceneScript` 签名变更**: 新增 `nodeName` 参数，传递给 scene-script 的 `create-prefab` 方法，用于在序列化前同步设置根节点名称。
+- **移除异步重命名**: `create_prefab` 和 `prefab_management` (create) 两个入口不再通过 `Editor.Ipc.sendToPanel("scene", "scene:set-property", ...)` 异步重命名节点，改为由 scene-script 内部同步处理。
+
 ## [1.2.1] - 2026-05-20
 ### Fixed
 - **刷新编辑器死锁修复**: 彻底解决 `refresh_editor` 对目录级路径执行 `Editor.assetdb.refresh()` 导致编辑器卡死的问题。

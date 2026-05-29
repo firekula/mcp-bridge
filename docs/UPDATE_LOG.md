@@ -2,6 +2,72 @@
 
 本文件详细记录了本次开发周期内的所有功能更新、性能改进以及关键问题的修复过程。
 
+## 预制体根节点错误修复 (2026-05-29)
+
+### 问题背景
+
+AI 调用 `create_prefab` 或 `prefab_management` (action=create) 创建预制体时，保存的 `.prefab` 文件名正确（如 `HomeView.prefab`），但文件内部根节点始终是 Canvas 而非目标节点。例如场景结构为 `Canvas → ViewManager → HomeView → TitleLabel`，期望以 HomeView 为根创建预制体，但实际预制体内部包含完整的 `Canvas → ViewManager → HomeView → TitleLabel` 祖先链。
+
+### 根因分析
+
+`Editor.serialize(node)` 在 Cocos Creator 2.x 中的行为是**从场景根节点开始序列化整个场景树**，而非仅序列化传入的 `node` 及其子树。序列化输出的 JSON 数组中，第一个 `cc.Node` 始终是场景根节点（Canvas），其 `_parent` 指向 `cc.Scene`。
+
+后处理管线（9 步转换）的逻辑是：
+1. 找到 `_parent.__id__` 指向 `cc.Scene` 的节点作为预制体根节点
+2. 由于 Canvas 的 `_parent` 指向 `cc.Scene`，Canvas 被识别为根
+3. Canvas 以下的完整子树被保留
+
+因此无论传入哪个目标节点，预制体根永远锁定为 Canvas。
+
+同时，原先的节点重命名使用异步 IPC `Editor.Ipc.sendToPanel("scene", "scene:set-property", ...)` + `setTimeout(300ms)`，存在 IPC 竞态风险（重命名在 scene panel 进程执行，序列化经由 `Editor.Scene.callSceneScript` 走另一条 IPC 通道），`prefab_management` 入口甚至完全无延迟等待。
+
+### 修复内容
+
+| 文件 | 修改 |
+|------|------|
+| `src/scene-script.ts` | `create-prefab` handler: 序列化前临时 detach 节点 (`node.parent = null`)，序列化后立即恢复 `node.parent` 和 `node.name`；新增 `nodeName` 参数支持同步重命名 |
+| `src/tools/ToolDispatcher.ts` | `_createPrefabViaSceneScript` 新增 `nodeName` 参数；`create_prefab` 入口移除异步 IPC 重命名 + setTimeout，直接传 `nodeName`；`prefabManagement` (create) 入口同样移除异步重命名，传 `prefabName` |
+
+### 核心修复代码
+
+```javascript
+// scene-script.ts: create-prefab handler
+// 保存原始状态
+const originalParent = node.parent;
+const originalName = node.name;
+
+// 临时 detach：欺骗 Editor.serialize 使其仅序列化目标节点及其子树
+node.parent = null;
+if (nodeName) node.name = nodeName;
+
+const serializedStr = Editor.serialize(node);
+
+// 立即恢复，保证场景状态不受影响
+node.parent = originalParent;
+node.name = originalName;
+```
+
+### 设计权衡
+
+不采用在 ToolDispatcher 层面增加更长 `setTimeout` 延迟的方案，因为：
+1. 无法根本解决 `Editor.serialize` 序列化整个场景树的问题
+2. IPC 异步延迟是启发式的，不同机器/负载下表现不一致
+3. 在 scene-script 内部同步 detach/rename/serialize/restore 是唯一能 100% 保证正确性的方案
+
+### 验证
+
+通过 MCPTest 项目实测：创建 `Canvas → ViewManager → HomeView(含Sprite) → TitleLabel(含Label)` 结构，以 HomeView (UUID: `4dFvcOwftDLoTiUFzWXqe6`) 为节点创建 `HomeView.prefab`。
+
+验证结果：
+- 预制体文件 `cc.Prefab.data.__id__` 指向索引 1 的 `cc.Node`
+- 索引 1 节点 `_name: "HomeView"`, `_parent: null` ✓
+- 索引 2 节点 `_name: "TitleLabel"`, `_parent.__id__: 1` ✓
+- 无 Canvas / ViewManager 祖先节点 ✓
+- 根节点 `cc.PrefabInfo.fileId` 已正确填充 ✓
+- 场景中 HomeView 节点名称和父子关系未受影响 ✓
+
+---
+
 ## refresh_editor 编辑器卡死修复 (2026-05-20)
 
 ### 问题背景
