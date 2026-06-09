@@ -105,6 +105,108 @@ export class OfflinePrefabEditor {
 		}
 	}
 
+	private static readonly BASE64_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	private static readonly HexMap: Record<string, number> = (() => {
+		const map: Record<string, number> = {};
+		for (let i = 0; i < 16; i++) {
+			map[i.toString(16)] = i;
+			map[i.toString(16).toUpperCase()] = i;
+		}
+		return map;
+	})();
+
+	public static isUuid(str: string): boolean {
+		const s = /^[0-9a-fA-F-]{36}$/;
+		const o = /^[0-9a-fA-F]{32}$/;
+		const u = /^[0-9a-zA-Z+/]{22,23}$/;
+		return s.test(str) || o.test(str) || u.test(str);
+	}
+
+	public static compressUuid(uuid: string): string {
+		const s = /^[0-9a-fA-F-]{36}$/;
+		const o = /^[0-9a-fA-F]{32}$/;
+		let cleanUuid = uuid;
+		if (s.test(uuid)) {
+			cleanUuid = uuid.replace(/-/g, "");
+		} else if (!o.test(uuid)) {
+			return uuid;
+		}
+		
+		const r = 5;
+		const prefix = cleanUuid.slice(0, r);
+		const chars: string[] = [];
+		let i = r;
+		while (i < cleanUuid.length) {
+			const left = this.HexMap[cleanUuid[i]];
+			const mid = this.HexMap[cleanUuid[i + 1]];
+			const right = this.HexMap[cleanUuid[i + 2]];
+			chars.push(this.BASE64_KEYS[(left << 2) | (mid >> 2)]);
+			chars.push(this.BASE64_KEYS[((mid & 3) << 4) | right]);
+			i += 3;
+		}
+		return prefix + chars.join("");
+	}
+
+	private static liftObject(data: any[], obj: any): any {
+		if (!obj || typeof obj !== "object") {
+			return obj;
+		}
+
+		if (Array.isArray(obj)) {
+			return obj.map(item => this.liftObject(data, item));
+		}
+
+		if (obj.__type__ !== undefined) {
+			const inlineTypes = ["cc.Vec2", "cc.Vec3", "cc.Vec4", "cc.Size", "cc.Rect", "cc.Color", "cc.Quat", "cc.Mat4", "TypedArray"];
+			if (!inlineTypes.includes(obj.__type__)) {
+				const newIdx = data.length;
+				data.push(null);
+
+				if (obj.__type__ === "cc.ClickEvent") {
+					let scriptUuid = "";
+					if (obj.target && obj.target.__id__ !== undefined) {
+						const targetNode = data[obj.target.__id__];
+						if (targetNode && targetNode._components) {
+							for (const compRef of targetNode._components) {
+								const comp = data[compRef.__id__];
+								if (comp && comp.__type__) {
+									const rawType = comp.__type__;
+									if (this.isUuid(rawType)) {
+										scriptUuid = rawType;
+										break;
+									}
+								}
+							}
+						}
+					}
+					if (scriptUuid) {
+						obj._componentId = this.compressUuid(scriptUuid);
+						obj.component = "";
+					} else if (obj.component) {
+						if (this.isUuid(obj.component)) {
+							obj._componentId = this.compressUuid(obj.component);
+							obj.component = "";
+						}
+					}
+				}
+
+				const processedObj: any = {};
+				for (const [k, v] of Object.entries(obj)) {
+					processedObj[k] = this.liftObject(data, v);
+				}
+
+				data[newIdx] = processedObj;
+				return { __id__: newIdx };
+			}
+		}
+
+		const result: any = {};
+		for (const [k, v] of Object.entries(obj)) {
+			result[k] = this.liftObject(data, v);
+		}
+		return result;
+	}
+
 	/**
 	 * 根据相对路径检索节点对象在数组中的索引位置
 	 * @param data 平铺的 JSON 数组
@@ -195,11 +297,12 @@ export class OfflinePrefabEditor {
 		if (op.action === "update_property") {
 			if (op.componentType) {
 				// 修改指定类型的组件属性
+				const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 				let foundCompIdx = -1;
 				const components = node._components || [];
 				for (const compRef of components) {
 					const comp = data[compRef.__id__];
-					if (comp && comp.__type__ === op.componentType) {
+					if (comp && comp.__type__ === compTypeToFind) {
 						foundCompIdx = compRef.__id__;
 						break;
 					}
@@ -212,9 +315,9 @@ export class OfflinePrefabEditor {
 				const component = data[foundCompIdx];
 				for (const [key, val] of Object.entries(op.properties || {})) {
 					const finalKey = propMap[key] || key;
-					component[finalKey] = val;
+					component[finalKey] = this.liftObject(data, val);
 					// 智能处理 Label 同步字段：修改 string 时自动同步 _N$string
-					if (key === "string" && op.componentType === "cc.Label") {
+					if (key === "string" && compTypeToFind === "cc.Label") {
 						component["_N$string"] = val;
 					}
 				}
@@ -222,7 +325,7 @@ export class OfflinePrefabEditor {
 				// 修改节点属性
 				for (const [key, val] of Object.entries(op.properties || {})) {
 					const finalKey = propMap[key] || key;
-					node[finalKey] = val;
+					node[finalKey] = this.liftObject(data, val);
 				}
 			}
 		} else if (op.action === "add_component") {
@@ -230,20 +333,22 @@ export class OfflinePrefabEditor {
 				throw new Error("新增组件失败：组件类型 componentType 缺失");
 			}
 
+			const compTypeToUse = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
+
 			// 初始化新增组件，并利用 push 追加到数组尾部以保持其他元素索引不受影响
 			const newCompIdx = data.length;
 			const defaultProps: Record<string, any> = {};
 
 			// 部分特定组件追加核心参数以防解析失败
-			if (op.componentType === "cc.Label") {
+			if (compTypeToUse === "cc.Label") {
 				defaultProps._string = "Label";
 				defaultProps._N$string = "Label";
-			} else if (op.componentType === "cc.Sprite") {
+			} else if (compTypeToUse === "cc.Sprite") {
 				defaultProps._spriteFrame = null;
 			}
 
 			const newComp: any = {
-				__type__: op.componentType,
+				__type__: compTypeToUse,
 				_name: "",
 				_objFlags: 0,
 				node: { __id__: nodeIdx },
@@ -254,7 +359,7 @@ export class OfflinePrefabEditor {
 			// 应用用户传入的属性
 			for (const [key, val] of Object.entries(op.properties || {})) {
 				const finalKey = propMap[key] || key;
-				newComp[finalKey] = val;
+				newComp[finalKey] = this.liftObject(data, val);
 			}
 
 			data.push(newComp);
@@ -268,11 +373,12 @@ export class OfflinePrefabEditor {
 				throw new Error("移除组件失败：组件类型 componentType 缺失");
 			}
 
+			const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 			let foundCompIdx = -1;
 			const components = node._components || [];
 			for (const compRef of components) {
 				const comp = data[compRef.__id__];
-				if (comp && comp.__type__ === op.componentType) {
+				if (comp && comp.__type__ === compTypeToFind) {
 					foundCompIdx = compRef.__id__;
 					break;
 				}
@@ -490,10 +596,11 @@ export class OfflinePrefabEditor {
 
 			let targetObj = node;
 			if (op.componentType) {
+				const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 				let foundCompIdx = -1;
 				for (const compRef of node._components || []) {
 					const comp = data[compRef.__id__];
-					if (comp && comp.__type__ === op.componentType) {
+					if (comp && comp.__type__ === compTypeToFind) {
 						foundCompIdx = compRef.__id__;
 						break;
 					}
@@ -512,11 +619,12 @@ export class OfflinePrefabEditor {
 				// 绑定内部对象
 				const refNodeIdx = this.findNodeByPath(data, ref.path);
 				if (ref.componentType) {
+					const refCompTypeToFind = this.isUuid(ref.componentType) ? this.compressUuid(ref.componentType) : ref.componentType;
 					let refCompIdx = -1;
 					const refNode = data[refNodeIdx];
 					for (const cRef of refNode._components || []) {
 						const c = data[cRef.__id__];
-						if (c && c.__type__ === ref.componentType) {
+						if (c && c.__type__ === refCompTypeToFind) {
 							refCompIdx = cRef.__id__;
 							break;
 						}
