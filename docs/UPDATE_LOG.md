@@ -2,6 +2,28 @@
 
 本文件详细记录了本次开发周期内的所有功能更新、性能改进以及关键问题的修复过程。
 
+## 离线预制体修改工具 - UUID 压缩与平铺对象提升适配 (2026-06-09)
+
+### 问题背景
+
+在前一阶段的离线预制体修改工具（`modify_prefab_offline`）实际测试中，我们发现了两个直接阻碍自定义脚本及事件挂载的缺陷：
+1. **MissingScript 报错**：离线直接挂载自定义脚本组件时，如果填入原始 of 36 位 UUID，Cocos Creator 引擎在反序列化时无法将其匹配映射到具体的类，从而在编辑器中显示为 `cc.MissingScript` 并导致其下的全部属性连线失效。
+2. **ClickEvent 点击事件失效**：在 Cocos 序列化规范中，`cc.ClickEvent` 属于 `cc.Object` 的派生类。这类对象在属性存储时**不能内联嵌套**，必须作为一个平铺项追加在物理预制体 JSON 数组的尾部，并通过 `{ "__id__": index }` 引入。并且其在物理对象上的 `component` 字段必须设为空 `""`，并且必须包含一个 `_componentId` 填入脚本压缩后的 23 位 UUID。
+
+### 修复方案与原理
+
+我们在 `OfflinePrefabEditor.ts` 内部进行了深层的算法拓展：
+1. **自动 UUID 压缩（r=5 压缩）**：内置了纯离线的 23 位 UUID 压缩互转算法。当挂载、检索或移除自定义组件时，若检测到传入了标准 36 位的原始 UUID，会自动在后台计算并替换为 Cocos Creator 特有的 23 位压缩版 UUID 作为组件的 `__type__`，确保编辑器能完美反序列化识别该类。
+2. **平铺提升器 (liftObject)**：新增了 `liftObject` 属性提取机制。当写入 `clickEvents` 等事件属性时，自动识别其中的内联事件对象并将其转换为平铺在预制体 JSON 尾部的独立对象（排除通用的 `cc.ValueType` 如 Size/Vec3/Color），重新 realign 所有受影响元素的 `__id__` 指向，并自动匹配对应 target 节点的脚本组件，计算并填入 `_componentId` 指向和清空 `component` 字段，100% 贴合了 Cocos 引擎的物理反序列化规范。
+
+### 改动范围
+
+| 文件 | 修改性质 | 详细内容 |
+|------|------|------|
+| `src/utils/OfflinePrefabEditor.ts` | 修改 | 新增自定义 `compressUuid` 算法、`isUuid` 校验以及 `liftObject` 对象自动提升平铺机制；在 `add_component`, `remove_component`, `set_reference`, `update_property` 中全面介入 UUID 自动压缩以及复杂类型属性的提取，彻底解决离线绑定失效及脚本丢失问题。 |
+
+---
+
 ## 离线预制体修改工具 (2026-06-08)
 
 ### 问题背景

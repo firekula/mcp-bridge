@@ -1,5 +1,12 @@
 # 更新日志 (UPDATE_LOG)
 
+## [1.2.3] - 2026-06-09
+### Feature
+- **离线预制体修改工具 (modify_prefab_offline) 重大功能增强**:
+  - **自定义脚本 UUID 自动压缩适配**：内置 Cocos Creator 特有的 r=5 UUID 压缩算法，自动将 36 位标准 UUID 压缩转换为 23 位格式，解决离线挂载自定义脚本时编辑器显示为 `cc.MissingScript` 的缺陷。
+  - **平铺对象自动提升平铺 (Lift & Flat)**：新增 `liftObject` 属性过滤与提升机制。当检测到 `cc.ClickEvent` 等非内联 `cc.Object` 对象时，自动在预制体平铺 JSON 尾部进行提升声明，并通过 `{ "__id__": x }` 重算索引进行关联引用，自动补齐 `_componentId` 参数并清空 `component` 字段，100% 还原引擎反序列化格式。
+  - **组件与资源检索兼容性**：扩展组件查找与引用设置（`add_component`、`remove_component`、`set_reference`、`update_property`），全面支持 UUID 的原始格式与压缩格式自动解析。
+
 ## [1.2.2] - 2026-05-29
 ### Fixed
 - **预制体根节点错误修复**: 修复 `create_prefab` / `prefab_management` 创建的预制体内部根节点永远为 Canvas 而非目标节点的问题。
