@@ -747,6 +747,7 @@ export = {
                     }
 
                     // 添加组件
+                    let isReused = false;
                     let component = node.addComponent(compClass);
 
                     if (!component) {
@@ -756,6 +757,7 @@ export = {
                             if (event.reply) event.reply(new Error(`添加组件失败，引擎返回 null 且未找到已有同类组件: ${componentType}`));
                             return;
                         }
+                        isReused = true;
                     }
 
                     // 设置属性
@@ -766,7 +768,9 @@ export = {
                     Editor.Ipc.sendToMain("scene:dirty");
                     Editor.Ipc.sendToAll("scene:node-changed", { uuid: nodeId });
 
-                    if (event.reply) event.reply(null, `组件 ${componentType} 已添加`);
+                    if (event.reply) {
+                        event.reply(null, isReused ? `组件 ${componentType} 已存在，已自动重用并覆盖其属性` : `组件 ${componentType} 已添加`);
+                    }
                 } catch (err) {
                     if (event.reply) event.reply(new Error(`添加组件失败: ${err.message}`));
                 }

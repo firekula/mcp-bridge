@@ -36,6 +36,19 @@
 		<ui-button id="btnInjectMcp" class="green">一键配置当前选择平台</ui-button>
 		<hr style="border-color: #444; margin: 20px 0;">
 		<ui-button id="btnInjectAll">尝试向所有平台分发配置</ui-button>
+		<hr style="border-color: #444; margin: 20px 0;">
+		<h4 style="margin: 0 0 15px 0;">⚙️ 性能与截图优化 (Mac 发热与卡顿优化)</h4>
+		<div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+			<label style="width: 140px; display: inline-block;">截屏最大宽度 (px):</label>
+			<ui-input id="screenshotWidthInput" style="width: 80px"></ui-input>
+			<span style="color: #666; font-size: 11px;">(DPI缩放上限，推荐1024-1920)</span>
+		</div>
+		<div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+			<label style="width: 140px; display: inline-block;">截屏防抖节流 (ms):</label>
+			<ui-input id="screenshotThrottleInput" style="width: 80px"></ui-input>
+			<span style="color: #666; font-size: 11px;">(限制截图调用频次，推荐1000-3000)</span>
+		</div>
+		<ui-button id="btnSaveScreenshotSettings" class="green">保存性能配置</ui-button>
 	</div>
 
 

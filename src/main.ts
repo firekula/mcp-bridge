@@ -43,6 +43,12 @@ export = {
 	},
     load() {
         Logger.info('MCP Bridge Plugin Loaded');
+        try {
+            const os = require("os");
+            Logger.info(`[系统指纹] 平台: ${os.platform()}, 架构: ${os.arch()}, CPU: ${os.cpus()[0]?.model || "未知"}, 内存: ${Math.round(os.totalmem() / 1024 / 1024 / 1024)}GB`);
+        } catch (e) {
+            // 防御保护
+        }
         let profile = this.getProfile();
         HttpServer.config.port = profile.get('last-port') || 3456;
         let autoStart = profile.get('auto-start');
@@ -123,7 +129,9 @@ export = {
 				config: HttpServer.config,
 				logs: Logger.getLogs(),
 				autoStart: profile.get("auto-start"),
-				configuredPort: profile.get('last-port') || 3456
+				configuredPort: profile.get('last-port') || 3456,
+				screenshotMaxWidth: profile.get("screenshot-max-width") !== undefined ? profile.get("screenshot-max-width") : 1280,
+				screenshotThrottle: profile.get("screenshot-throttle") !== undefined ? profile.get("screenshot-throttle") : 1500
 			});
 		},
 
@@ -365,6 +373,27 @@ export = {
 				openScene: Editor.currentSceneUuid
 			};
 			if (event.reply) event.reply(null, info);
+		},
+		"set-screenshot-settings"(event, args) {
+			try {
+				let profile = this.getProfile();
+				let maxWidth = Number(args.maxWidth);
+				let throttle = Number(args.throttle);
+				
+				// 参数防呆校验
+				if (isNaN(maxWidth) || maxWidth < 100) maxWidth = 1280;
+				if (isNaN(throttle) || throttle < 0) throttle = 1500;
+				
+				profile.set("screenshot-max-width", maxWidth);
+				profile.set("screenshot-throttle", throttle);
+				profile.save();
+				
+				Logger.info(`[配置更新] 截图优化设置已保存：最大宽度 = ${maxWidth}px，节流 = ${throttle}ms`);
+				if (event.reply) event.reply(null, "OK");
+			} catch (e) {
+				Logger.error(`保存设置失败: ${e.message}`);
+				if (event.reply) event.reply(e.message);
+			}
 		}
 	},
 

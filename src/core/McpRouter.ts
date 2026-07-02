@@ -86,9 +86,12 @@ export class McpRouter {
 
 				let responseSent = false;
 				CommandQueue.enqueue((done) => {
+					const startTime = Date.now();
 					ToolDispatcher.handleMcpCall(name, args, (err: any, result: any) => {
 						if (responseSent) return; // 超时已发送错误响应，跳过
 						responseSent = true;
+						const duration = Date.now() - startTime;
+						
 						const response = {
 							content: [
 								{
@@ -102,7 +105,7 @@ export class McpRouter {
 							],
 						};
 						if (err) {
-							Logger.error(`RES <- [${name}] 失败: ${err}`);
+							Logger.error(`RES <- [${name}] 失败 (耗时 ${duration}ms): ${err}`);
 						} else {
 							let preview = "";
 							if (typeof result === "string") {
@@ -114,7 +117,13 @@ export class McpRouter {
 									preview = "Object (Circular/Unserializable)";
 								}
 							}
-							Logger.success(`RES <- [${name}] 成功 : ${preview}`);
+							
+							const logText = `RES <- [${name}] 成功 (耗时 ${duration}ms) : ${preview.substring(0, 200)}${preview.length > 200 ? "..." : ""}`;
+							if (duration > 1000) {
+								Logger.warn(`[慢操作告警] ${logText}`);
+							} else {
+								Logger.success(logText);
+							}
 						}
 						res.writeHead(200);
 						res.end(JSON.stringify(response));

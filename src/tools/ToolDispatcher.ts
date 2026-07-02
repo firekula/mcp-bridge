@@ -166,6 +166,15 @@ function getNewSceneTemplate() { return `[
 
 export class ToolDispatcher {
   static isSceneBusy = false;
+  static lastScreenshotTime = 0;
+  static lastScreenshotData = "";
+
+  static clearScreenshotCache() {
+      if (ToolDispatcher.lastScreenshotData) {
+          ToolDispatcher.lastScreenshotData = "";
+          Logger.info("[性能优化] 检测到写操作，已主动清空截图缓存");
+      }
+  }
 
   static _ensureParentDirSync(targetPath: string) {
       const ext = pathModule.extname(targetPath);
@@ -190,15 +199,38 @@ export class ToolDispatcher {
   static fixPrefabRootFileId(fp: any) { return AssetPatcher.fixPrefabRootFileId(fp); }
 
   static handleMcpCall(name, args, callback) {
+        const writeOperations = [
+            "set_node_name", "save_scene", "save_prefab", "close_prefab",
+            "update_node_transform", "create_scene", "create_prefab", "open_scene",
+            "open_prefab", "create_node", "manage_components", "manage_script",
+            "batch_execute", "manage_asset", "scene_management", "prefab_management",
+            "manage_editor", "manage_animation", "manage_material", "manage_texture",
+            "manage_shader", "execute_menu_item", "apply_text_edits", "manage_undo",
+            "manage_vfx", "modify_prefab_offline"
+        ];
+        if (writeOperations.includes(name)) {
+            ToolDispatcher.clearScreenshotCache();
+        }
+
 		if (ToolDispatcher.isSceneBusy && (name === "save_scene" || name === "create_node")) {
 			return callback("编辑器正忙（正在处理场景），请稍候。");
 		}
 				switch (name) {
-			case "capture_editor_screenshot":
+			case "capture_editor_screenshot": {
+				const now = Date.now();
+				const profile = Editor.Profile.load("profile://project/mcp-bridge.json", "mcp-bridge");
+				const throttle = profile.get("screenshot-throttle") !== undefined ? Number(profile.get("screenshot-throttle")) : 1500;
+				const maxWidth = profile.get("screenshot-max-width") !== undefined ? Number(profile.get("screenshot-max-width")) : 1280;
+
+				if (now - ToolDispatcher.lastScreenshotTime < throttle && ToolDispatcher.lastScreenshotData) {
+					Logger.info(`[性能优化] 截屏请求过频 (间隔小于 ${throttle}ms)，直接返回上一次截图的缓存数据。`);
+					return callback(null, ToolDispatcher.lastScreenshotData);
+				}
+
 				ToolDispatcher.isSceneBusy = true;
 				
 				// 让编辑器的 Scene 视图居中并调整缩放看全景
-								// 让编辑器的 Scene 视图居中（修复 init-scene-view 找不到的问题）
+				// 让编辑器的 Scene 视图居中（修复 init-scene-view 找不到的问题）
 				Editor.Ipc.sendToPanel("scene", "scene:query-hierarchy", (err, sceneId, hierarchy) => {
 					if (!err && hierarchy && hierarchy.children && hierarchy.children.length > 0) {
 						const rootChild = hierarchy.children.find((c) => c.name === "Canvas") || hierarchy.children[0];
@@ -228,17 +260,30 @@ export class ToolDispatcher {
 						// 安全超时防止死锁
 						setTimeout(() => { resolveCallback("Editor screenshot API timed out.", null); }, 5000);
 
-						try {
-							const p = win.webContents.capturePage();
-							if (p && typeof p.then === 'function') {
-								p.then(image => resolveCallback(null, image.toDataURL()))
-								 .catch(e => resolveCallback(`Promise Screenshot error: ${e.message}`, null));
-							} else {
-								win.capturePage((image) => resolveCallback(null, image.toDataURL()));
+						const processImage = (img) => {
+							try {
+								let finalImg = img;
+								const size = img.getSize();
+								if (size.width > 0 && size.height > 0 && size.width > maxWidth) {
+									const scale = maxWidth / size.width;
+									const targetHeight = Math.round(size.height * scale);
+									finalImg = img.resize({ width: maxWidth, height: targetHeight, quality: "better" });
+								}
+								const dataUrl = finalImg.toDataURL();
+								ToolDispatcher.lastScreenshotTime = Date.now();
+								ToolDispatcher.lastScreenshotData = dataUrl;
+								resolveCallback(null, dataUrl);
+							} catch (e) {
+								resolveCallback(`处理截图失败: ${e.message}`, null);
 							}
-						} catch(err) {
-							// 降级尝试回调模式
-							win.capturePage((image) => resolveCallback(null, image.toDataURL()));
+						};
+
+						const p = win.webContents.capturePage();
+						if (p && typeof p.then === 'function') {
+							p.then(processImage)
+							 .catch(e => resolveCallback(`Promise Screenshot error: ${e.message}`, null));
+						} else {
+							win.capturePage(processImage);
 						}
 					} catch(e) {
 						ToolDispatcher.isSceneBusy = false;
@@ -246,6 +291,7 @@ export class ToolDispatcher {
 					}
 				}, 500);
 				break;
+			}
 
 			case "get_selected_node":
 				const ids = Editor.Selection.curSelection("node");

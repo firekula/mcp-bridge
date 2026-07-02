@@ -99,6 +99,11 @@ Editor.Panel.extend({
 					if (activePortDisplay) activePortDisplay.style.display = "none";
 				}
 
+				const widthInput = root.querySelector("#screenshotWidthInput") as HTMLInputElement;
+				const throttleInput = root.querySelector("#screenshotThrottleInput") as HTMLInputElement;
+				if (widthInput) widthInput.value = data.screenshotMaxWidth !== undefined ? data.screenshotMaxWidth : 1280;
+				if (throttleInput) throttleInput.value = data.screenshotThrottle !== undefined ? data.screenshotThrottle : 1500;
+
 				els.logView.innerHTML = "";
 				data.logs.forEach((l) => this.renderLog(l));
 			}
@@ -160,6 +165,33 @@ Editor.Panel.extend({
 		if (els.mcpClientSelect) {
 			els.mcpClientSelect.addEventListener("change", () => {
 				this.renderMcpClientStatus(els);
+			});
+		}
+
+		const btnSaveScreenshotSettings = root.querySelector("#btnSaveScreenshotSettings");
+		if (btnSaveScreenshotSettings) {
+			btnSaveScreenshotSettings.addEventListener("confirm", () => {
+				const widthInput = root.querySelector("#screenshotWidthInput") as HTMLInputElement;
+				const throttleInput = root.querySelector("#screenshotThrottleInput") as HTMLInputElement;
+				const maxWidth = parseInt(widthInput.value);
+				const throttle = parseInt(throttleInput.value);
+				
+				if (isNaN(maxWidth) || maxWidth < 100) {
+					Editor.warn("最大宽度必须是大于等于 100 的数字");
+					return;
+				}
+				if (isNaN(throttle) || throttle < 0) {
+					Editor.warn("节流时间必须是大于等于 0 的数字");
+					return;
+				}
+				
+				Editor.Ipc.sendToMain("mcp-bridge:set-screenshot-settings", { maxWidth, throttle }, (err) => {
+					if (err) {
+						Editor.error("保存设置失败: " + err);
+					} else {
+						Editor.success("截图优化设置已成功保存！");
+					}
+				});
 			});
 		}
 	},
