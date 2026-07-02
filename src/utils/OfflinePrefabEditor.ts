@@ -61,6 +61,15 @@ export class OfflinePrefabEditor {
 	}
 
 	/**
+	 * 判断平铺 JSON 数组是否为场景文件格式（而非预制体）
+	 * @param data 平铺 of JSON 数组
+	 * @returns 如果首元素为 cc.SceneAsset 则返回 true
+	 */
+	public static isSceneData(data: any[]): boolean {
+		return data[0] && data[0].__type__ === "cc.SceneAsset";
+	}
+
+	/**
 	 * 离线修改预制体主入口
 	 * @param prefabFsPath 预制体文件的绝对物理路径
 	 * @param operations 待执行的操作列表
@@ -77,7 +86,7 @@ export class OfflinePrefabEditor {
 			const data = JSON.parse(content);
 
 			if (!Array.isArray(data) || data.length === 0) {
-				throw new Error("格式错误的预制体 JSON 文件，期待平铺数组");
+				throw new Error("格式错误的资源 JSON 文件，期待平铺数组");
 			}
 
 			// 3. 依次应用操作
@@ -92,7 +101,7 @@ export class OfflinePrefabEditor {
 			}
 			return { success: true };
 		} catch (e) {
-			Logger.error(`[OfflinePrefabEditor] 修改失败，正在回滚物理文件: ${(e as Error).message}`);
+			Logger.error(`[OfflineEditor] 修改失败，正在回滚物理文件: ${(e as Error).message}`);
 			if (fs.existsSync(backupPath)) {
 				try {
 					fs.copyFileSync(backupPath, prefabFsPath);
@@ -105,6 +114,108 @@ export class OfflinePrefabEditor {
 		}
 	}
 
+	private static readonly BASE64_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	private static readonly HexMap: Record<string, number> = (() => {
+		const map: Record<string, number> = {};
+		for (let i = 0; i < 16; i++) {
+			map[i.toString(16)] = i;
+			map[i.toString(16).toUpperCase()] = i;
+		}
+		return map;
+	})();
+
+	public static isUuid(str: string): boolean {
+		const s = /^[0-9a-fA-F-]{36}$/;
+		const o = /^[0-9a-fA-F]{32}$/;
+		const u = /^[0-9a-zA-Z+/]{22,23}$/;
+		return s.test(str) || o.test(str) || u.test(str);
+	}
+
+	public static compressUuid(uuid: string): string {
+		const s = /^[0-9a-fA-F-]{36}$/;
+		const o = /^[0-9a-fA-F]{32}$/;
+		let cleanUuid = uuid;
+		if (s.test(uuid)) {
+			cleanUuid = uuid.replace(/-/g, "");
+		} else if (!o.test(uuid)) {
+			return uuid;
+		}
+		
+		const r = 5;
+		const prefix = cleanUuid.slice(0, r);
+		const chars: string[] = [];
+		let i = r;
+		while (i < cleanUuid.length) {
+			const left = this.HexMap[cleanUuid[i]];
+			const mid = this.HexMap[cleanUuid[i + 1]];
+			const right = this.HexMap[cleanUuid[i + 2]];
+			chars.push(this.BASE64_KEYS[(left << 2) | (mid >> 2)]);
+			chars.push(this.BASE64_KEYS[((mid & 3) << 4) | right]);
+			i += 3;
+		}
+		return prefix + chars.join("");
+	}
+
+	private static liftObject(data: any[], obj: any): any {
+		if (!obj || typeof obj !== "object") {
+			return obj;
+		}
+
+		if (Array.isArray(obj)) {
+			return obj.map(item => this.liftObject(data, item));
+		}
+
+		if (obj.__type__ !== undefined) {
+			const inlineTypes = ["cc.Vec2", "cc.Vec3", "cc.Vec4", "cc.Size", "cc.Rect", "cc.Color", "cc.Quat", "cc.Mat4", "TypedArray"];
+			if (!inlineTypes.includes(obj.__type__)) {
+				const newIdx = data.length;
+				data.push(null);
+
+				if (obj.__type__ === "cc.ClickEvent") {
+					let scriptUuid = "";
+					if (obj.target && obj.target.__id__ !== undefined) {
+						const targetNode = data[obj.target.__id__];
+						if (targetNode && targetNode._components) {
+							for (const compRef of targetNode._components) {
+								const comp = data[compRef.__id__];
+								if (comp && comp.__type__) {
+									const rawType = comp.__type__;
+									if (this.isUuid(rawType)) {
+										scriptUuid = rawType;
+										break;
+									}
+								}
+							}
+						}
+					}
+					if (scriptUuid) {
+						obj._componentId = this.compressUuid(scriptUuid);
+						obj.component = "";
+					} else if (obj.component) {
+						if (this.isUuid(obj.component)) {
+							obj._componentId = this.compressUuid(obj.component);
+							obj.component = "";
+						}
+					}
+				}
+
+				const processedObj: any = {};
+				for (const [k, v] of Object.entries(obj)) {
+					processedObj[k] = this.liftObject(data, v);
+				}
+
+				data[newIdx] = processedObj;
+				return { __id__: newIdx };
+			}
+		}
+
+		const result: any = {};
+		for (const [k, v] of Object.entries(obj)) {
+			result[k] = this.liftObject(data, v);
+		}
+		return result;
+	}
+
 	/**
 	 * 根据相对路径检索节点对象在数组中的索引位置
 	 * @param data 平铺的 JSON 数组
@@ -112,21 +223,31 @@ export class OfflinePrefabEditor {
 	 * @returns 目标节点在 data 数组中的索引值
 	 */
 	private static findNodeByPath(data: any[], path: string): number {
-		const prefabEntry = data[0];
-		if (!prefabEntry || prefabEntry.__type__ !== "cc.Prefab" || !prefabEntry.data) {
-			throw new Error("格式错误：数组首位未找到 cc.Prefab 根声明入口");
+		const rootEntry = data[0];
+		if (!rootEntry) {
+			throw new Error("格式错误：数组首位未找到有效声明入口");
 		}
 
-		let currentNodeIdx = prefabEntry.data.__id__;
+		let currentNodeIdx = -1;
+		const isScene = this.isSceneData(data);
+
+		if (rootEntry.__type__ === "cc.Prefab" && rootEntry.data) {
+			currentNodeIdx = rootEntry.data.__id__;
+		} else if (rootEntry.__type__ === "cc.SceneAsset" && rootEntry.scene) {
+			currentNodeIdx = rootEntry.scene.__id__;
+		} else {
+			throw new Error(`不支持的离线编辑资源类型: ${rootEntry.__type__}`);
+		}
+
 		if (!path || path === "" || path === "/") {
 			return currentNodeIdx;
 		}
 
 		let segments = path.split("/").filter((s) => s !== "");
 		const rootNode = data[currentNodeIdx];
-		// 智能容错：如果第一个路径段就是根节点的名字，且我们要么没有更多路径段，
-		// 要么根节点下并没有同名的子节点（避免冲突），则跳过根节点名称这一级
-		if (rootNode && segments[0] === rootNode._name) {
+		// 智能容错：对于预制体，如果第一个路径段就是根节点名称，且没有重名冲突，则跳过
+		// 对于场景，寻路起点是 cc.Scene 虚拟节点，其 _name 通常无意义，直接开始匹配子节点
+		if (!isScene && rootNode && segments[0] === rootNode._name) {
 			let hasSameNameChild = false;
 			if (rootNode._children) {
 				for (const childRef of rootNode._children) {
@@ -148,7 +269,7 @@ export class OfflinePrefabEditor {
 				throw new Error(`引用错误：找不到索引为 ${currentNodeIdx} 的节点对象`);
 			}
 			if (!node._children) {
-				throw new Error(`节点查找失败：节点 ${node._name} (索引 ${currentNodeIdx}) 没有子节点`);
+				throw new Error(`节点查找失败：节点 ${node._name || 'Scene'} (索引 ${currentNodeIdx}) 没有子节点`);
 			}
 
 			let foundIdx = -1;
@@ -195,11 +316,12 @@ export class OfflinePrefabEditor {
 		if (op.action === "update_property") {
 			if (op.componentType) {
 				// 修改指定类型的组件属性
+				const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 				let foundCompIdx = -1;
 				const components = node._components || [];
 				for (const compRef of components) {
 					const comp = data[compRef.__id__];
-					if (comp && comp.__type__ === op.componentType) {
+					if (comp && comp.__type__ === compTypeToFind) {
 						foundCompIdx = compRef.__id__;
 						break;
 					}
@@ -212,9 +334,9 @@ export class OfflinePrefabEditor {
 				const component = data[foundCompIdx];
 				for (const [key, val] of Object.entries(op.properties || {})) {
 					const finalKey = propMap[key] || key;
-					component[finalKey] = val;
+					component[finalKey] = this.liftObject(data, val);
 					// 智能处理 Label 同步字段：修改 string 时自动同步 _N$string
-					if (key === "string" && op.componentType === "cc.Label") {
+					if (key === "string" && compTypeToFind === "cc.Label") {
 						component["_N$string"] = val;
 					}
 				}
@@ -222,7 +344,7 @@ export class OfflinePrefabEditor {
 				// 修改节点属性
 				for (const [key, val] of Object.entries(op.properties || {})) {
 					const finalKey = propMap[key] || key;
-					node[finalKey] = val;
+					node[finalKey] = this.liftObject(data, val);
 				}
 			}
 		} else if (op.action === "add_component") {
@@ -230,20 +352,22 @@ export class OfflinePrefabEditor {
 				throw new Error("新增组件失败：组件类型 componentType 缺失");
 			}
 
+			const compTypeToUse = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
+
 			// 初始化新增组件，并利用 push 追加到数组尾部以保持其他元素索引不受影响
 			const newCompIdx = data.length;
 			const defaultProps: Record<string, any> = {};
 
 			// 部分特定组件追加核心参数以防解析失败
-			if (op.componentType === "cc.Label") {
+			if (compTypeToUse === "cc.Label") {
 				defaultProps._string = "Label";
 				defaultProps._N$string = "Label";
-			} else if (op.componentType === "cc.Sprite") {
+			} else if (compTypeToUse === "cc.Sprite") {
 				defaultProps._spriteFrame = null;
 			}
 
 			const newComp: any = {
-				__type__: op.componentType,
+				__type__: compTypeToUse,
 				_name: "",
 				_objFlags: 0,
 				node: { __id__: nodeIdx },
@@ -254,7 +378,7 @@ export class OfflinePrefabEditor {
 			// 应用用户传入的属性
 			for (const [key, val] of Object.entries(op.properties || {})) {
 				const finalKey = propMap[key] || key;
-				newComp[finalKey] = val;
+				newComp[finalKey] = this.liftObject(data, val);
 			}
 
 			data.push(newComp);
@@ -268,11 +392,12 @@ export class OfflinePrefabEditor {
 				throw new Error("移除组件失败：组件类型 componentType 缺失");
 			}
 
+			const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 			let foundCompIdx = -1;
 			const components = node._components || [];
 			for (const compRef of components) {
 				const comp = data[compRef.__id__];
-				if (comp && comp.__type__ === op.componentType) {
+				if (comp && comp.__type__ === compTypeToFind) {
 					foundCompIdx = compRef.__id__;
 					break;
 				}
@@ -288,11 +413,10 @@ export class OfflinePrefabEditor {
 			// 2. 物理删除并对剩余索引及连线引用进行重算，杜绝 null 占位造成的反序列化卡死
 			this.physicalEraseAndRealign(data, [foundCompIdx]);
 		} else if (op.action === "add_node") {
-			// 新增节点并追加配套 PrefabInfo
+			const isScene = this.isSceneData(data);
 			const newNodeIdx = data.length;
-			const prefabInfoIdx = newNodeIdx + 1;
 
-			const newNode = {
+			const newNode: any = {
 				__type__: "cc.Node",
 				_name: op.nodeName || "New Node",
 				_objFlags: 0,
@@ -300,7 +424,7 @@ export class OfflinePrefabEditor {
 				_children: [],
 				_components: [],
 				_active: true,
-				_prefab: { __id__: prefabInfoIdx },
+				_prefab: null,
 				_opacity: 255,
 				_color: { __type__: "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255 },
 				_contentSize: { __type__: "cc.Size", "width": 100, "height": 100 },
@@ -319,16 +443,20 @@ export class OfflinePrefabEditor {
 				_id: ""
 			};
 
-			const newPrefabInfo = {
-				__type__: "cc.PrefabInfo",
-				root: { __id__: data[0].data.__id__ },
-				asset: { __id__: 0 },
-				fileId: this.generateFileId(),
-				sync: false
-			};
-
 			data.push(newNode);
-			data.push(newPrefabInfo);
+
+			if (!isScene) {
+				const prefabInfoIdx = data.length;
+				const newPrefabInfo = {
+					__type__: "cc.PrefabInfo",
+					root: { __id__: data[0].data.__id__ },
+					asset: { __id__: 0 },
+					fileId: this.generateFileId(),
+					sync: false
+				};
+				data.push(newPrefabInfo);
+				newNode._prefab = { __id__: prefabInfoIdx };
+			}
 
 			if (!node._children) {
 				node._children = [];
@@ -490,10 +618,11 @@ export class OfflinePrefabEditor {
 
 			let targetObj = node;
 			if (op.componentType) {
+				const compTypeToFind = this.isUuid(op.componentType) ? this.compressUuid(op.componentType) : op.componentType;
 				let foundCompIdx = -1;
 				for (const compRef of node._components || []) {
 					const comp = data[compRef.__id__];
-					if (comp && comp.__type__ === op.componentType) {
+					if (comp && comp.__type__ === compTypeToFind) {
 						foundCompIdx = compRef.__id__;
 						break;
 					}
@@ -512,11 +641,12 @@ export class OfflinePrefabEditor {
 				// 绑定内部对象
 				const refNodeIdx = this.findNodeByPath(data, ref.path);
 				if (ref.componentType) {
+					const refCompTypeToFind = this.isUuid(ref.componentType) ? this.compressUuid(ref.componentType) : ref.componentType;
 					let refCompIdx = -1;
 					const refNode = data[refNodeIdx];
 					for (const cRef of refNode._components || []) {
 						const c = data[cRef.__id__];
-						if (c && c.__type__ === ref.componentType) {
+						if (c && c.__type__ === refCompTypeToFind) {
 							refCompIdx = cRef.__id__;
 							break;
 						}

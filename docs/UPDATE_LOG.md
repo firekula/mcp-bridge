@@ -2,6 +2,55 @@
 
 本文件详细记录了本次开发周期内的所有功能更新、性能改进以及关键问题的修复过程。
 
+## 离线场景修改工具 - 支持场景文件 (.fire) 修改 (2026-07-01)
+
+### 问题背景
+
+之前实现的离线预制体修改工具（`modify_prefab_offline`）极大提升了大语言模型修改、创建节点组件的工作效率与稳定性。然而，面对大批量的场景配置更新或场景节点离线初始化，在线打开场景（`open_scene`）再保存依然可能导致主线程阻塞。我们需要让该离线编辑引擎同样能够支持场景文件（`.fire`）的直接物理读写。
+
+### 修复方案与原理
+
+1. **寻路根起点泛化**：
+   - 场景与预制体在 Cocos Creator 2.x 中均基于平铺的 JSON 对象数组实现，但顶层骨架不同。预制体以 `cc.Prefab` 为首元素并引用唯一根节点，而场景以 `cc.SceneAsset` 为首元素并引用一个 `cc.Scene` 节点容器。
+   - 重构了 `OfflinePrefabEditor.findNodeByPath` 的寻路起点：若检测到入口为 `cc.SceneAsset`，则自动将其引用的 `cc.Scene` 作为寻路根容器。由于 `cc.Scene` 在平铺结构中和普通节点一样拥有 `_children` 属性，后续子树寻路算法得以 100% 共享。
+2. **差异化 PrefabInfo 挂载拦截**：
+   - 在预制体模式下添加子节点（`add_node`）时，强制要求伴随创建并挂载 `cc.PrefabInfo`；而在普通的场景模式下，新增的节点默认没有预制体绑定，`_prefab` 属性必须设为 `null` 且无需在物理数组中插入 `cc.PrefabInfo`。引擎在 `add_node` 时对这两类入口作了精确的差异化判定和安全拦截。
+3. **新增场景分发**：
+   - 注册了 `modify_scene_offline` MCP 工具，与预制体离线修改共享完全相同的 Operations 操作结构；并支持在文件不存在时，自动写入包含 `cc.SceneAsset` 与 `cc.Scene` 的极简场景物理骨架以实现“无中生有”的新建场景能力。
+
+### 改动范围
+
+| 文件 | 修改性质 | 详细内容 |
+|------|------|------|
+| `src/utils/OfflinePrefabEditor.ts` | 修改 | 新增 `isSceneData` 判断；重构 `findNodeByPath` 支持 `cc.SceneAsset` 和 `cc.Prefab` 检索起点；在 `add_node` 中拦截场景下的 `cc.PrefabInfo` 创建。 |
+| `src/tools/ToolDispatcher.ts` | 修改 | 增加对 `modify_scene_offline` case 的路由处理、场景空骨架物理写入及非阻塞刷新资产动作。 |
+| `src/tools/ToolRegistry.ts` | 修改 | 注册全新的 `modify_scene_offline` 工具 schema 参数接口描述。 |
+| `UPDATE_LOG.md` | 修改 | 追加离线场景编辑支持的 Feature/Changed 说明。 |
+
+---
+
+## 离线预制体修改工具 - UUID 压缩与平铺对象提升适配 (2026-06-09)
+
+### 问题背景
+
+在前一阶段的离线预制体修改工具（`modify_prefab_offline`）实际测试中，我们发现了两个直接阻碍自定义脚本及事件挂载的缺陷：
+1. **MissingScript 报错**：离线直接挂载自定义脚本组件时，如果填入原始 of 36 位 UUID，Cocos Creator 引擎在反序列化时无法将其匹配映射到具体的类，从而在编辑器中显示为 `cc.MissingScript` 并导致其下的全部属性连线失效。
+2. **ClickEvent 点击事件失效**：在 Cocos 序列化规范中，`cc.ClickEvent` 属于 `cc.Object` 的派生类。这类对象在属性存储时**不能内联嵌套**，必须作为一个平铺项追加在物理预制体 JSON 数组的尾部，并通过 `{ "__id__": index }` 引入。并且其在物理对象上的 `component` 字段必须设为空 `""`，并且必须包含一个 `_componentId` 填入脚本压缩后的 23 位 UUID。
+
+### 修复方案与原理
+
+我们在 `OfflinePrefabEditor.ts` 内部进行了深层的算法拓展：
+1. **自动 UUID 压缩（r=5 压缩）**：内置了纯离线的 23 位 UUID 压缩互转算法。当挂载、检索或移除自定义组件时，若检测到传入了标准 36 位的原始 UUID，会自动在后台计算并替换为 Cocos Creator 特有的 23 位压缩版 UUID 作为组件的 `__type__`，确保编辑器能完美反序列化识别该类。
+2. **平铺提升器 (liftObject)**：新增了 `liftObject` 属性提取机制。当写入 `clickEvents` 等事件属性时，自动识别其中的内联事件对象并将其转换为平铺在预制体 JSON 尾部的独立对象（排除通用的 `cc.ValueType` 如 Size/Vec3/Color），重新 realign 所有受影响元素的 `__id__` 指向，并自动匹配对应 target 节点的脚本组件，计算并填入 `_componentId` 指向和清空 `component` 字段，100% 贴合了 Cocos 引擎的物理反序列化规范。
+
+### 改动范围
+
+| 文件 | 修改性质 | 详细内容 |
+|------|------|------|
+| `src/utils/OfflinePrefabEditor.ts` | 修改 | 新增自定义 `compressUuid` 算法、`isUuid` 校验以及 `liftObject` 对象自动提升平铺机制；在 `add_component`, `remove_component`, `set_reference`, `update_property` 中全面介入 UUID 自动压缩以及复杂类型属性的提取，彻底解决离线绑定失效及脚本丢失问题。 |
+
+---
+
 ## 离线预制体修改工具 (2026-06-08)
 
 ### 问题背景

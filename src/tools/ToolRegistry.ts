@@ -633,6 +633,43 @@ export const getToolsList = () => {
 				},
 				required: ["prefabUrl", "operations"]
 			}
+		},
+		{
+			name: "modify_scene_offline",
+			description: `【离线高效场景修改】在不打开编辑器场景窗口的情况下，直接通过底层的 JSON 结构修改场景数据，并刷新 AssetDB。支持 update_property, add_component, remove_component, add_node, remove_node, clone_node, reorder_child, set_reference 操作。与 modify_prefab_offline 共享完全相同的 operations 参数结构。如果场景文件不存在且第一个操作为 add_node 且 targetPath 为空，则自动创建空场景。注意：场景中新增的节点不会携带 PrefabInfo。`,
+			inputSchema: {
+				type: "object",
+				properties: {
+					sceneUrl: { type: "string", description: "场景在项目中的相对路径，如 db://assets/scenes/MyScene.fire" },
+					operations: {
+						type: "array",
+						items: {
+							type: "object",
+							properties: {
+								action: { type: "string", enum: ["update_property", "add_component", "remove_component", "add_node", "remove_node", "clone_node", "reorder_child", "set_reference"] },
+								targetPath: { type: "string", description: "节点相对根节点的查找路径，用 '/' 分割，如 'Canvas/Body/Label'。场景中寻路起点为 cc.Scene 虚拟节点，直接传 'Canvas' 即可定位到 Canvas 节点。" },
+								componentType: { type: "string", description: "组件类名，如 'cc.Label'" },
+								properties: { type: "object", description: "属性键值对" },
+								nodeName: { type: "string", description: "新节点或克隆后节点的名称" },
+								newParentPath: { type: "string", description: "克隆节点要挂载的父节点路径" },
+								childOrder: { type: "array", items: { type: "string" }, description: "子节点名称排序数组" },
+								propertyName: { type: "string", description: "要绑定引用的组件属性名" },
+								referenceValue: {
+									type: "object",
+									description: "绑定的引用目标值",
+									properties: {
+										uuid: { type: "string", description: "外部资源的 UUID" },
+										path: { type: "string", description: "内部节点路径" },
+										componentType: { type: "string", description: "特定组件类名" }
+									}
+								}
+							},
+							required: ["action"]
+						}
+					}
+				},
+				required: ["sceneUrl", "operations"]
+			}
 		}
 	];
 };

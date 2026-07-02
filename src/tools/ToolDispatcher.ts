@@ -674,6 +674,82 @@ export class ToolDispatcher {
 				break;
 			}
 
+			case "modify_scene_offline": {
+				const sceneFsPath = Editor.assetdb.urlToFspath(args.sceneUrl);
+				if (!sceneFsPath) {
+					return callback(`场景路径解析失败: ${args.sceneUrl}`);
+				}
+
+				// 支持离线无中生有自动新建场景
+				if (!fs.existsSync(sceneFsPath)) {
+					const firstOp = args.operations[0];
+					if (firstOp && firstOp.action === "add_node" && (!firstOp.targetPath || firstOp.targetPath === "" || firstOp.targetPath === "/")) {
+						// 写入最简空场景骨架（cc.SceneAsset + cc.Scene）
+						const emptySceneSkeleton = `[
+  {
+    "__type__": "cc.SceneAsset",
+    "_name": "",
+    "_objFlags": 0,
+    "_native": "",
+    "scene": { "__id__": 1 }
+  },
+  {
+    "__type__": "cc.Scene",
+    "_objFlags": 0,
+    "_parent": null,
+    "_children": [],
+    "_active": true,
+    "_components": [],
+    "_prefab": null,
+    "_opacity": 255,
+    "_color": { "__type__": "cc.Color", "r": 255, "g": 255, "b": 255, "a": 255 },
+    "_contentSize": { "__type__": "cc.Size", "width": 0, "height": 0 },
+    "_anchorPoint": { "__type__": "cc.Vec2", "x": 0, "y": 0 },
+    "_trs": { "__type__": "TypedArray", "ctor": "Float64Array", "array": [0,0,0,0,0,0,1,1,1,1] },
+    "_is3DNode": true,
+    "_groupIndex": 0,
+    "groupIndex": 0,
+    "autoReleaseAssets": false,
+    "_id": ""
+  }
+]`;
+						try {
+							const parentDir = pathModule.dirname(sceneFsPath);
+							if (!fs.existsSync(parentDir)) {
+								fs.mkdirSync(parentDir, { recursive: true });
+							}
+							fs.writeFileSync(sceneFsPath, emptySceneSkeleton, "utf8");
+							// 不 shift 第一个 add_node，因为场景骨架中 cc.Scene 的 _children 为空，
+							// 需要 add_node 来向 cc.Scene 下添加节点
+						} catch (e) {
+							return callback(`无中生有初始化场景失败: ${(e as Error).message}`);
+						}
+					} else {
+						return callback(`场景物理文件不存在: ${args.sceneUrl}，且不满足离线自动新建条件`);
+					}
+				}
+
+				const result = OfflinePrefabEditor.modify(sceneFsPath, args.operations);
+				if (!result.success) {
+					return callback(`离线修改场景失败: ${result.error}`);
+				}
+
+				// 物理落盘成功，立即返回成功
+				callback(null, `成功离线修改场景: ${args.sceneUrl}，物理数据已安全落盘。`);
+
+				// 异步非阻塞刷新资产
+				setTimeout(() => {
+					if (Editor && Editor.assetdb) {
+						Editor.assetdb.refresh(args.sceneUrl, (err) => {
+							if (err) {
+								console.warn(`[mcp-bridge] 离线修改场景后刷新资产失败: ${err.message}`);
+							}
+						});
+					}
+				}, 200);
+				break;
+			}
+
 			default:
 				callback(`Unknown tool: ${name}`);
 				break;

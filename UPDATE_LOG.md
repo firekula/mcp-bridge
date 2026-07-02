@@ -9,6 +9,23 @@
 - **指令高精度耗时与慢指令告警**：在 McpRouter 层面记录工具真实执行耗时（排除在 CommandQueue 中的排队等待时间），对执行超过 1000ms 的慢操作打印警告日志，同时收集并输出加载时的系统指纹日志，辅助定位硬件瓶颈。
 - **写操作缓存清除**：添加针对写操作工具（如 `update_node_transform`, `create_node` 等）的联动，在写操作成功时主动清空截图节流缓存，保证下次截图时必定能拉取最新的场景状态，消除状态不同步问题。
 - **可视化性能配置 UI**：在插件的「MCP 配置」页签中新增“性能与截图优化”控制模块，支持图形化配置截屏限制宽度和防抖节流毫秒数，并支持 Editor.Profile 项目级配置本地持久化存储。
+## [1.2.4] - 2026-07-01
+### Feature
+- **离线场景修改工具 (modify_scene_offline)**:
+  - 新增 `modify_scene_offline` MCP 工具，将离线编辑能力从预制体 (.prefab) 扩展到场景文件 (.fire)。
+  - 泛化 `OfflinePrefabEditor` 引擎，自动识别 `cc.SceneAsset` 与 `cc.Prefab` 两种入口格式，共享全部 8 大声明式原子操作（update_property、add_node、remove_node、clone_node、reorder_child、add_component、remove_component、set_reference）。
+  - 场景模式下新增节点不生成 `cc.PrefabInfo`，避免引擎反序列化报错。
+  - 支持"无中生有"自动创建空场景骨架。
+
+### Changed
+- `OfflinePrefabEditor.findNodeByPath` 重构为双类型入口检测（`cc.Prefab` / `cc.SceneAsset`），保持预制体功能完全向后兼容。
+
+## [1.2.3] - 2026-06-09
+### Feature
+- **离线预制体修改工具 (modify_prefab_offline) 重大功能增强**:
+  - **自定义脚本 UUID 自动压缩适配**：内置 Cocos Creator 特有的 r=5 UUID 压缩算法，自动将 36 位标准 UUID 压缩转换为 23 位格式，解决离线挂载自定义脚本时编辑器显示为 `cc.MissingScript` 的缺陷。
+  - **平铺对象自动提升平铺 (Lift & Flat)**：新增 `liftObject` 属性过滤与提升机制。当检测到 `cc.ClickEvent` 等非内联 `cc.Object` 对象时，自动在预制体平铺 JSON 尾部进行提升声明，并通过 `{ "__id__": x }` 重算索引进行关联引用，自动补齐 `_componentId` 参数并清空 `component` 字段，100% 还原引擎反序列化格式。
+  - **组件与资源检索兼容性**：扩展组件查找与引用设置（`add_component`、`remove_component`、`set_reference`、`update_property`），全面支持 UUID 的原始格式与压缩格式自动解析。
 
 ## [1.2.2] - 2026-05-29
 
