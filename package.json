@@ -1,6 +1,6 @@
 {
 	"name": "mcp-bridge",
-	"version": "1.2.4",
+	"version": "1.3.2",
 	"description": "Cocos Creator MCP 桥接插件",
 	"author": "Firekula",
 	"main": "dist/main.js",

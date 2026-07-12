@@ -1,7 +1,7 @@
 <div class="mcp-container">
 	<div class="tabs">
-		<ui-button id="tabMain" class="tab-button active">主页</ui-button>
-		<ui-button id="tabConfig" class="tab-button">MCP 配置</ui-button>
+		<button id="tabMain" class="tab-button active">主页</button>
+		<button id="tabConfig" class="tab-button">MCP 配置</button>
 	</div>
 
 	<div id="panelMain" class="tab-content active">
@@ -9,46 +9,66 @@
 			<div class="ctrl-group">
 				<span>端口:</span>
 				<ui-input id="portInput" style="width: 60px"></ui-input>
-				<ui-button id="btnToggle">启动</ui-button>
+				<button id="btnToggle" class="green">启动</button>
 				<span id="activePortDisplay" style="margin-left:8px; color:#888; font-size:12px; display:none;"></span>
 			</div>
 			<div class="ctrl-group" style="margin-left: 10px">
 				<ui-checkbox id="autoStartCheck">自动启动</ui-checkbox>
 			</div>
 			<div class="spacer"></div>
-			<ui-button id="btnClear" class="transparent">清空日志</ui-button>
-			<ui-button id="btnCopy" class="transparent">复制全部</ui-button>
+			<button id="btnClear" class="transparent">清空日志</button>
+			<button id="btnCopy" class="transparent">复制全部</button>
 		</div>
 		<div id="logConsole" class="log-view"></div>
 	</div>
 
-	<div id="panelConfig" class="tab-content" style="padding: 15px; color: #ccc;">
-		<h4 style="margin: 0 0 15px 0;">⚡ 自动化工具链配置</h4>
-		<div style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
-			<label>宿主平台:</label>
-			<select id="mcpClientSelect"
-				style="width:160px; background: #333; color: #ccc; border: 1px solid #555; height: 25px; outline: none;"></select>
-			<ui-button id="btnRefreshMcp" class="transparent">↻ 刷新</ui-button>
+	<div id="panelConfig" class="tab-content" style="padding: 12px; color: #ccc; overflow-y: auto;">
+		<div class="settings-container">
+			<!-- 卡片 1: 自动化工具链配置 -->
+			<div class="settings-card">
+				<h4>⚡ 自动化工具链配置</h4>
+				
+				<div class="form-item">
+					<label>宿主平台:</label>
+					<div class="form-row">
+						<select id="mcpClientSelect"></select>
+						<button id="btnRefreshMcp" class="transparent">↻ 刷新</button>
+					</div>
+				</div>
+
+				<div id="mcpConfigStatus" class="status-box">等待扫描...</div>
+
+				<div class="action-group">
+					<button id="btnInjectMcp" class="green">一键配置当前选择平台</button>
+					<button id="btnInjectAll">尝试向所有平台分发配置</button>
+				</div>
+			</div>
+
+			<!-- 卡片 2: 性能与截图优化 -->
+			<div class="settings-card">
+				<h4>⚙️ 性能与截图优化 <span class="subtitle">Mac 发热与卡顿优化</span></h4>
+				
+				<div class="form-item">
+					<label>截屏最大宽度 (px):</label>
+					<div class="form-row">
+						<ui-input id="screenshotWidthInput" style="width: 80px"></ui-input>
+						<span class="tip-text">(DPI缩放上限，推荐1024-1920)</span>
+					</div>
+				</div>
+
+				<div class="form-item">
+					<label>截屏防抖节流 (ms):</label>
+					<div class="form-row">
+						<ui-input id="screenshotThrottleInput" style="width: 80px"></ui-input>
+						<span class="tip-text">(限制截图频次，推荐1000-3000)</span>
+					</div>
+				</div>
+
+				<div class="action-group">
+					<button id="btnSaveScreenshotSettings" class="green">保存性能配置</button>
+				</div>
+			</div>
 		</div>
-		<div id="mcpConfigStatus"
-			style="margin-bottom: 15px; background: #222; border: 1px solid #444; padding: 10px; border-radius: 4px; line-height: 1.6;">
-			等待扫描...</div>
-		<ui-button id="btnInjectMcp" class="green">一键配置当前选择平台</ui-button>
-		<hr style="border-color: #444; margin: 20px 0;">
-		<ui-button id="btnInjectAll">尝试向所有平台分发配置</ui-button>
-		<hr style="border-color: #444; margin: 20px 0;">
-		<h4 style="margin: 0 0 15px 0;">⚙️ 性能与截图优化 (Mac 发热与卡顿优化)</h4>
-		<div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-			<label style="width: 140px; display: inline-block;">截屏最大宽度 (px):</label>
-			<ui-input id="screenshotWidthInput" style="width: 80px"></ui-input>
-			<span style="color: #666; font-size: 11px;">(DPI缩放上限，推荐1024-1920)</span>
-		</div>
-		<div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
-			<label style="width: 140px; display: inline-block;">截屏防抖节流 (ms):</label>
-			<ui-input id="screenshotThrottleInput" style="width: 80px"></ui-input>
-			<span style="color: #666; font-size: 11px;">(限制截图调用频次，推荐1000-3000)</span>
-		</div>
-		<ui-button id="btnSaveScreenshotSettings" class="green">保存性能配置</ui-button>
 	</div>
 
 
@@ -78,15 +98,92 @@
 		flex-shrink: 0;
 	}
 
+	/* 模拟原本 Cocos 的 button 外观，确保去除聚焦框且不带内凹黑框 */
+	button {
+		background: #353535;
+		border: 1px solid #1c1c1c;
+		border-radius: 3px;
+		color: #e0e0e0;
+		padding: 3px 12px;
+		outline: none;
+		cursor: pointer;
+		font-size: 12px;
+		box-sizing: border-box;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		transition: background-color 0.1s;
+	}
+	button:hover {
+		background: #404040;
+		color: #ffffff;
+	}
+	button:active {
+		background: #252525;
+		color: #bbbbbb;
+	}
+	button:focus {
+		outline: none !important;
+	}
+
+	/* Tab 按钮专用样式 */
 	.tab-button {
 		padding: 4px 12px;
 		margin-right: 2px;
 		background: #333;
+		border: 1px solid #222;
+		border-bottom: none;
+		border-radius: 4px 4px 0 0;
+		color: #cccccc;
 	}
-
+	.tab-button:hover {
+		background: #404040;
+		color: #ffffff;
+	}
 	.tab-button.active {
 		background: #4caf50;
 		color: white;
+		border-color: #4caf50;
+	}
+
+	/* 绿色按钮 (保存、一键配置等) */
+	button.green {
+		background: #44aa44;
+		border-color: #3b933b;
+		color: white;
+	}
+	button.green:hover {
+		background: #3e963e;
+	}
+	button.green:active {
+		background: #2d702d;
+		color: #dddddd;
+	}
+
+	/* 启停按钮 (停止服务状态) */
+	button.running {
+		background: #aa4444;
+		border-color: #933b3b;
+		color: white;
+	}
+	button.running:hover {
+		background: #963e3e;
+	}
+	button.running:active {
+		background: #7e2d2d;
+		color: #dddddd;
+	}
+
+	/* 透明按钮样式：日志清空/复制 */
+	button.transparent {
+		background: transparent;
+		border: 1px solid transparent;
+		box-shadow: none;
+		color: #888;
+	}
+	button.transparent:hover {
+		background: rgba(255, 255, 255, 0.05);
+		color: #ccc;
 	}
 
 	.tab-content {
@@ -164,5 +261,112 @@
 	.time {
 		color: #5c6370;
 		margin-right: 8px;
+	}
+
+	/* 设置面板响应式网格布局 */
+	.settings-container {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+		width: 100%;
+		max-width: 900px;
+		margin: 0 auto;
+		box-sizing: border-box;
+	}
+
+	.settings-card {
+		flex: 1 1 350px;
+		min-width: 300px;
+		background: #252525;
+		border: 1px solid #3c3c3c;
+		border-radius: 6px;
+		padding: 16px;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-start;
+		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+	}
+
+	.settings-card h4 {
+		margin: 0 0 16px 0;
+		font-size: 13px;
+		color: #ffffff;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		border-bottom: 1px solid #3c3c3c;
+		padding-bottom: 8px;
+	}
+
+	.settings-card h4 .subtitle {
+		font-weight: normal;
+		font-size: 11px;
+		color: #888;
+		margin-left: auto;
+	}
+
+	.form-item {
+		margin-bottom: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.form-item label {
+		color: #cccccc;
+		font-size: 12px;
+	}
+
+	.form-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.form-row select {
+		flex: 1;
+		background: #333;
+		color: #ccc;
+		border: 1px solid #555;
+		height: 25px;
+		border-radius: 3px;
+		outline: none;
+		padding: 0 4px;
+	}
+
+	.form-row select:focus {
+		border-color: #4caf50;
+	}
+
+	.status-box {
+		background: #1e1e1e;
+		border: 1px solid #333;
+		padding: 10px;
+		border-radius: 4px;
+		line-height: 1.6;
+		font-size: 11px;
+		color: #aaa;
+		margin-bottom: 16px;
+		min-height: 72px;
+		box-sizing: border-box;
+		word-break: break-all;
+	}
+
+	.tip-text {
+		color: #666;
+		font-size: 11px;
+	}
+
+	.action-group {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: auto; /* 卡片垂直高度不一时，拉伸对齐 */
+	}
+
+	.action-group button {
+		width: 100%;
+		height: 28px;
 	}
 </style>

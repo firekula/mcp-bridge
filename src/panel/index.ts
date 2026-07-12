@@ -121,68 +121,68 @@ Editor.Panel.extend({
 			if (activePanel) activePanel.classList.add("active");
 		};
 
-		if (els.tabMain) els.tabMain.addEventListener("confirm", () => switchTab(els.tabMain, els.panelMain));
-
-		if (els.tabConfig) {
-			els.tabConfig.addEventListener("confirm", () => {
-				switchTab(els.tabConfig, els.panelConfig);
-				this.fetchMcpClients(els);
-			});
-		}
-
-		// 3. 基础控制按钮逻辑
-		els.btnToggle.addEventListener("confirm", () => {
-			Editor.Ipc.sendToMain("mcp-bridge:toggle-server", parseInt(els.port.value));
-		});
-
-		root.querySelector("#btnClear").addEventListener("confirm", () => {
-			els.logView.innerHTML = "";
-			Editor.Ipc.sendToMain("mcp-bridge:clear-logs");
-		});
-
-		root.querySelector("#btnCopy").addEventListener("confirm", () => {
-			require("electron").clipboard.writeText(els.logView.innerText);
-			Editor.success("日志已复制到剪贴板");
-		});
-
-		els.autoStart.addEventListener("change", (e) => {
-			Editor.Ipc.sendToMain("mcp-bridge:set-auto-start", e.target.value);
-		});
-
-		// 4.5 MCP 配置页交互逻辑
-		if (els.btnRefreshMcp) els.btnRefreshMcp.addEventListener("confirm", () => this.fetchMcpClients(els));
-		if (els.btnInjectMcp) {
-			els.btnInjectMcp.addEventListener("confirm", () => {
-				const clientId = parseInt(els.mcpClientSelect.value);
-				if (!isNaN(clientId)) this.injectMcpConfig(clientId, els);
-			});
-		}
-		if (els.btnInjectAll) {
-			els.btnInjectAll.addEventListener("confirm", () => {
-				this.injectMcpConfig(-1, els);
-			});
-		}
-		if (els.mcpClientSelect) {
-			els.mcpClientSelect.addEventListener("change", () => {
-				this.renderMcpClientStatus(els);
-			});
-		}
-
-		const btnSaveScreenshotSettings = root.querySelector("#btnSaveScreenshotSettings");
-		if (btnSaveScreenshotSettings) {
-			btnSaveScreenshotSettings.addEventListener("confirm", () => {
-				const widthInput = root.querySelector("#screenshotWidthInput") as HTMLInputElement;
-				const throttleInput = root.querySelector("#screenshotThrottleInput") as HTMLInputElement;
-				const maxWidth = parseInt(widthInput.value);
-				const throttle = parseInt(throttleInput.value);
-				
-				if (isNaN(maxWidth) || maxWidth < 100) {
-					Editor.warn("最大宽度必须是大于等于 100 的数字");
-					return;
-				}
-				if (isNaN(throttle) || throttle < 0) {
-					Editor.warn("节流时间必须是大于等于 0 的数字");
-					return;
+		if (els.tabMain) els.tabMain.addEventListener("click", () => switchTab(els.tabMain, els.panelMain));
+ 
+ 		if (els.tabConfig) {
+ 			els.tabConfig.addEventListener("click", () => {
+ 				switchTab(els.tabConfig, els.panelConfig);
+ 				this.fetchMcpClients(els);
+ 			});
+ 		}
+ 
+ 		// 3. 基础控制按钮逻辑
+ 		els.btnToggle.addEventListener("click", () => {
+ 			Editor.Ipc.sendToMain("mcp-bridge:toggle-server", parseInt(els.port.value));
+ 		});
+ 
+ 		root.querySelector("#btnClear").addEventListener("click", () => {
+ 			els.logView.innerHTML = "";
+ 			Editor.Ipc.sendToMain("mcp-bridge:clear-logs");
+ 		});
+ 
+ 		root.querySelector("#btnCopy").addEventListener("click", () => {
+ 			require("electron").clipboard.writeText(els.logView.innerText);
+ 			Editor.success("日志已复制到剪贴板");
+ 		});
+ 
+ 		els.autoStart.addEventListener("change", (e) => {
+ 			Editor.Ipc.sendToMain("mcp-bridge:set-auto-start", e.target.value);
+ 		});
+ 
+ 		// 4.5 MCP 配置页交互逻辑
+ 		if (els.btnRefreshMcp) els.btnRefreshMcp.addEventListener("click", () => this.fetchMcpClients(els));
+ 		if (els.btnInjectMcp) {
+ 			els.btnInjectMcp.addEventListener("click", () => {
+ 				const clientId = parseInt(els.mcpClientSelect.value);
+ 				if (!isNaN(clientId)) this.injectMcpConfig(clientId, els);
+ 			});
+ 		}
+ 		if (els.btnInjectAll) {
+ 			els.btnInjectAll.addEventListener("click", () => {
+ 				this.injectMcpConfig(-1, els);
+ 			});
+ 		}
+ 		if (els.mcpClientSelect) {
+ 			els.mcpClientSelect.addEventListener("change", () => {
+ 				this.renderMcpClientStatus(els);
+ 			});
+ 		}
+ 
+ 		const btnSaveScreenshotSettings = root.querySelector("#btnSaveScreenshotSettings");
+ 		if (btnSaveScreenshotSettings) {
+ 			btnSaveScreenshotSettings.addEventListener("click", () => {
+ 				const widthInput = root.querySelector("#screenshotWidthInput") as HTMLInputElement;
+ 				const throttleInput = root.querySelector("#screenshotThrottleInput") as HTMLInputElement;
+ 				const maxWidth = parseInt(widthInput.value);
+ 				const throttle = parseInt(throttleInput.value);
+ 				
+ 				if (isNaN(maxWidth) || maxWidth < 100) {
+ 					Editor.warn("最大宽度必须是大于等于 100 的数字");
+ 					return;
+ 				}
+ 				if (isNaN(throttle) || throttle < 0) {
+ 					Editor.warn("节流时间必须是大于等于 0 的数字");
+ 					return;
 				}
 				
 				Editor.Ipc.sendToMain("mcp-bridge:set-screenshot-settings", { maxWidth, throttle }, (err) => {
@@ -253,7 +253,7 @@ Editor.Panel.extend({
 			}
 			// 回到主页以便查看日志
 			if (els.tabMain) {
-				els.tabMain.dispatchEvent(new Event("confirm"));
+				els.tabMain.dispatchEvent(new Event("click"));
 			}
 			// 重新刷新下数据，但由于刚才跳到了主页所以下次回配置页时会刷新。
 			setTimeout(() => this.fetchMcpClients(els), 500);
@@ -295,6 +295,15 @@ Editor.Panel.extend({
 		const btn = (this as any).shadowRoot.querySelector("#btnToggle") as HTMLElement;
 		if (!btn) return;
 		btn.innerText = active ? "停止" : "启动";
-		btn.style.backgroundColor = active ? "#aa4444" : "#44aa44";
+		
+		// 移除直接 style 修改，通过 class 切换实现样式优雅过渡
+		btn.style.backgroundColor = ""; 
+		if (active) {
+			btn.classList.add("running");
+			btn.classList.remove("green");
+		} else {
+			btn.classList.remove("running");
+			btn.classList.add("green");
+		}
 	},
 });
