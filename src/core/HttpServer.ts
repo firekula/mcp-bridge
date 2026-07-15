@@ -4,7 +4,7 @@ import { Logger } from "./Logger";
 export class HttpServer {
 	private static mcpServer: http.Server | null = null;
 	public static config = {
-		port: 3456,
+		port: 8200,
 		active: false,
 	};
 

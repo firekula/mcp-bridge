@@ -1,5 +1,17 @@
 # 更新日志 (UPDATE_LOG)
 
+## [1.3.3] - 2026-07-15
+
+### Changed
+- **默认端口改为 8200**：将 HTTP 服务器默认端口从 3456 改为 8200，规避 Windows Hyper-V/WSL 端口排除范围（3441–3540）导致的 `EACCES` 权限拒绝错误。扫描范围同步从 3456–3466 调整为 8200–8210。
+- **服务器绑定地址改为 127.0.0.1**：MCP 服务仅需本地回环通信，绑定 `0.0.0.0` 会与 Hyper-V NAT 端口保留机制冲突，改为 `127.0.0.1` 彻底消除该问题。
+
+### Fixed
+- **EACCES 端口绑定错误修复**：`HttpServer` 错误处理器原先仅处理 `EADDRINUSE`（端口被占用），未处理 Windows 端口排除范围返回的 `EACCES`。现在 `EACCES` 与 `EADDRINUSE` 统一处理，自动滚动到下一端口重试。
+
+### Security
+- **未激活项目工具隔离**：未通过 `set_active_instance` 激活项目前，`tools/list` 仅返回 `get_active_instances` 和 `set_active_instance` 两个基础管理工具。离线编辑工具（`modify_prefab_offline`、`modify_scene_offline`）及其他编辑器工具必须在激活项目后方可使用，防止未授权访问项目文件。
+
 ## [1.3.2] - 2026-07-12
 
 ### Changed

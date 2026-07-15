@@ -50,7 +50,7 @@ export = {
             // 防御保护
         }
         let profile = this.getProfile();
-        HttpServer.config.port = profile.get('last-port') || 3456;
+        HttpServer.config.port = profile.get('last-port') || 8200;
         let autoStart = profile.get('auto-start');
 
         if (autoStart) {
@@ -129,7 +129,7 @@ export = {
 				config: HttpServer.config,
 				logs: Logger.getLogs(),
 				autoStart: profile.get("auto-start"),
-				configuredPort: profile.get('last-port') || 3456,
+				configuredPort: profile.get('last-port') || 8200,
 				screenshotMaxWidth: profile.get("screenshot-max-width") !== undefined ? profile.get("screenshot-max-width") : 1280,
 				screenshotThrottle: profile.get("screenshot-throttle") !== undefined ? profile.get("screenshot-throttle") : 1500
 			});

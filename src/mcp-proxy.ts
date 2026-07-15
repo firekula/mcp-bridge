@@ -14,10 +14,10 @@ import { OfflinePrefabEditor } from "./utils/OfflinePrefabEditor";
  * 支持通过环境变量 MCP_BRIDGE_PORT 或命令行参数指定端口
  * @type {number}
  */
-const COCOS_PORT = parseInt(process.env.MCP_BRIDGE_PORT || process.argv[2] || "3456", 10);
+const COCOS_PORT = parseInt(process.env.MCP_BRIDGE_PORT || process.argv[2] || "8200", 10);
 let globalActivePort: number | null = null;
-const START_PORT = 3456;
-const END_PORT = 3466;
+const START_PORT = 8200;
+const END_PORT = 8210;
 
 /** 从扫描到的实例缓存的项目物理路径，用于 db:// URL → 绝对路径 转换 */
 let cachedProjectPath: string | null = process.env.MCP_BRIDGE_PROJECT_PATH || null;
@@ -313,7 +313,7 @@ function handleRequest(req: any) {
         return;
     }
 
-    // 获取工具列表 — 始终包含离线编辑工具
+    // 获取工具列表 — 未激活项目时只返回基础管理工具，激活后才返回全部工具
     if (method === "tools/list") {
         scanActiveInstances().then(instances => {
             // 缓存项目路径供离线 URL 解析使用
@@ -324,7 +324,7 @@ function handleRequest(req: any) {
             const dynamicTools = [
                 {
                     name: "get_active_instances",
-                    description: "Scan local ports (3456-3466) to find all running Cocos Creator instances and return their project paths and connection ports.",
+                    description: "Scan local ports (8200-8210) to find all running Cocos Creator instances and return their project paths and connection ports.",
                     inputSchema: { type: "object", properties: {} }
                 },
                 {
@@ -334,10 +334,11 @@ function handleRequest(req: any) {
                 }
             ];
 
-            const targetPort = globalActivePort || (instances.length > 0 ? instances[0].port : COCOS_PORT);
+            const isActivated = instances.length > 0 || globalActivePort !== null;
 
-            if (instances.length > 0 || globalActivePort) {
-                // 向目标引擎层请求内部工具组，合并离线工具和动态管理工具
+            if (isActivated) {
+                // 已激活项目：向目标引擎层请求内部工具组，合并离线工具和动态管理工具
+                const targetPort = globalActivePort || (instances.length > 0 ? instances[0].port : COCOS_PORT);
                 forwardToCocos("/list-tools", null, id, "GET", targetPort, (cocosRes) => {
                     if (cocosRes && cocosRes.tools) {
                         // 去重：如果 Cocos 插件已经返回了同名的离线工具，用代理版的替代
@@ -349,12 +350,12 @@ function handleRequest(req: any) {
                     sendToAI({ jsonrpc: "2.0", id: id, result: cocosRes });
                 });
             } else {
-                // 没有 Cocos 实例运行，只返回离线工具 + 基础管理工具
+                // 未激活项目：只返回基础管理工具（get_active_instances + set_active_instance）
                 sendToAI({
                     jsonrpc: "2.0",
                     id: id,
                     result: {
-                        tools: [...OFFLINE_TOOLS, ...dynamicTools]
+                        tools: [...dynamicTools]
                     }
                 });
             }
@@ -384,23 +385,26 @@ function handleRequest(req: any) {
             return;
         }
 
-        // 离线编辑工具：直接在代理中处理（不依赖 Cocos Creator）
+        // 离线编辑工具：需要先激活项目
         if (OFFLINE_TOOL_NAMES.has(params.name)) {
-            // 如果 Cocos Creator 在线，优先转发以获得 AssetDB 刷新等完整功能
-            // 如果离线，直接在本进程处理
             scanActiveInstances().then(onlineEngines => {
                 if (onlineEngines.length > 0 || globalActivePort) {
-                    const finalPort = globalActivePort || onlineEngines[0].port;
-                    if (cachedProjectPath) {
-                        // 同步项目路径到引擎层
+                    // 已激活项目：如果 Cocos Creator 在线则优先转发（获得 AssetDB 刷新），否则在本进程处理
+                    if (onlineEngines.length > 0) {
+                        const finalPort = globalActivePort || onlineEngines[0].port;
+                        if (cachedProjectPath) {
+                            // 同步项目路径到引擎层
+                        }
+                        forwardToCocos(
+                            "/call-tool",
+                            { name: params.name, arguments: params.arguments },
+                            id, "POST", finalPort
+                        );
+                    } else {
+                        executeOfflineEdit(params.name, params.arguments, id);
                     }
-                    forwardToCocos(
-                        "/call-tool",
-                        { name: params.name, arguments: params.arguments },
-                        id, "POST", finalPort
-                    );
                 } else {
-                    executeOfflineEdit(params.name, params.arguments, id);
+                    sendError(id, -32000, "未激活任何 Cocos 项目实例。请先调用 `get_active_instances` 查看可用的实例，然后使用 `set_active_instance` 激活目标项目。\nNo active Cocos project instance. Please call `get_active_instances` first, then activate a project via `set_active_instance`.");
                 }
             });
             return;
@@ -408,6 +412,10 @@ function handleRequest(req: any) {
 
         // 其它工具需要转发到 Cocos Creator 插件
         scanActiveInstances().then(onlineEngines => {
+            if (!globalActivePort && onlineEngines.length === 0) {
+                sendError(id, -32000, "未激活任何 Cocos 项目实例，无法执行编辑器工具。请先调用 `get_active_instances` 查看可用的实例，然后使用 `set_active_instance` 激活目标项目。\nNo active Cocos project instance. Please call `get_active_instances` first, then activate a project via `set_active_instance`.");
+                return;
+            }
             if (!globalActivePort && onlineEngines.length > 1) {
                 sendError(id, -32600, "检测到多个 Cocos 实例运行中，指令下发被安全锁截停。请必须先调用 `get_active_instances` 并随后执行 `set_active_instance` 指定唯一的实例端口。 \nMultiple Cocos instances detected. Please call `get_active_instances` and then `set_active_instance` to bind port.");
                 return;
