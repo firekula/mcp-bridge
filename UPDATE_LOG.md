@@ -1,5 +1,13 @@
 # 更新日志 (UPDATE_LOG)
 
+## [1.3.4] - 2026-07-24
+
+### Fixed & Feature
+- **Codex 配置路径与 TOML 格式适配**：更正 Codex 配置文件路径为标准 `~/.codex/config.toml` (TOML 格式)，实现 TOML 区块 (`[mcp_servers.mcp-bridge]`) 精准匹配与安全增量合并，解决全量写入导致 Codex 原全局配置丢失的问题。
+- **Zed 编辑器格式与键名适配**：修正 Zed 配置文件路径为 `settings.json`，并将根节点更新为 Zed 官方指定的 `context_servers` 键名。
+- **配置写入前自动备份 (.bak)**：所有 AI 客户端在注入配置前统一增量生成同名 `.bak` 备份文件（如 `config.toml.bak` / `settings.json.bak`），保障用户配置文件不丢失。
+- **JSON 深度增量合并**：JSON 配置注入时保留用户既有的全部根节点属性（如主题、字体、按键绑定等），避免全量覆盖。
+
 ## [1.3.3] - 2026-07-15
 
 ### Changed

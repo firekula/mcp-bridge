@@ -1,4 +1,3 @@
-
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -12,11 +11,24 @@ const getMacAppSupportPath = () => process.env.HOME + '/Library/Application Supp
 const getUserProfilePath = () => process.env.USERPROFILE || process.env.HOME || '';
 const getAppDataDir = () => isWin ? getAppdataPath() : getMacAppSupportPath();
 
-// 如需添加自定义 AI 客户端配置，按以下格式新增一行即可：
-// { name: '显示名称', file: path.join(getUserProfilePath(), '目录', '文件名.json') }
-// 可用路径辅助函数：getUserProfilePath() → %USERPROFILE% 或 $HOME
-//                   getAppDataDir()       → %APPDATA% 或 ~/Library/Application Support
-const targetPaths = [
+/**
+ * AI 客户端配置目标定义接口
+ */
+export interface TargetClient {
+    /** 客户端显示名称 */
+    name: string;
+    /** 配置文件绝对路径 */
+    file: string;
+    /** 配置文件格式类型，支持 json 和 toml，默认为 json */
+    format?: 'json' | 'toml';
+    /** MCP 服务器配置根键名，默认为 mcpServers */
+    mcpKey?: string;
+}
+
+/**
+ * 支持的常见 AI 客户端配置文件路径与元数据定义列表
+ */
+export const targetPaths: TargetClient[] = [
     { name: 'Antigravity', file: path.join(getUserProfilePath(), '.gemini', 'config', 'mcp_config.json') },
     { name: 'Cherry Studio', file: path.join(getAppDataDir(), 'cherry-studio', 'mcp.json') },
     { name: 'Claude Code', file: path.join(getUserProfilePath(), '.claude.json') },
@@ -25,7 +37,7 @@ const targetPaths = [
     { name: 'CodeBuddy CLI', file: path.join(getUserProfilePath(), '.codebuddy', 'mcp.json') },
     { name: 'CodeWhale', file: path.join(getUserProfilePath(), '.codewhale', 'mcp.json') },
     { name: 'Deepseek-TUI', file: path.join(getUserProfilePath(), '.deepseek', 'mcp.json') },
-    { name: 'Codex', file: path.join(getUserProfilePath(), '.codex', 'mcp.json') },
+    { name: 'Codex', file: path.join(getUserProfilePath(), '.codex', 'config.toml'), format: 'toml' },
     { name: 'Cursor', file: path.join(getUserProfilePath(), '.cursor', 'mcp.json') },
     { name: 'Gemini CLI', file: path.join(getUserProfilePath(), '.gemini', 'mcp.json') },
     { name: 'GitHub Copilot CLI', file: path.join(getUserProfilePath(), '.config', 'github-copilot', 'mcp.json') },
@@ -40,9 +52,62 @@ const targetPaths = [
     { name: 'VSCode GitHub Copilot', file: path.join(getAppDataDir(), 'Code', 'User', 'globalStorage', 'github.copilot', 'mcp.json') },
     { name: 'VSCode Insiders GitHub Copilot', file: path.join(getAppDataDir(), 'Code - Insiders', 'User', 'globalStorage', 'github.copilot', 'mcp.json') },
     { name: 'Windsurf', file: path.join(getUserProfilePath(), '.codeium', 'windsurf', 'mcp_config.json') },
-    { name: 'Zed', file: path.join(getUserProfilePath(), '.config', 'zed', 'mcp.json') }
+    { 
+        name: 'Zed', 
+        file: isWin 
+            ? path.join(getAppdataPath(), 'Zed', 'settings.json') 
+            : path.join(getUserProfilePath(), '.config', 'zed', 'settings.json'),
+        format: 'json',
+        mcpKey: 'context_servers'
+    }
 ];
 
+/**
+ * 备份目标配置文件，生成同名 .bak 文件兜底
+ * @param targetFile 目标文件绝对路径
+ * @param clientName AI 客户端名称
+ * @returns 备份文件的绝对路径，若无需备份或失败返回 null
+ */
+function backupConfigFile(targetFile: string, clientName: string): string | null {
+    if (!fs.existsSync(targetFile)) {
+        return null;
+    }
+    const backupPath = `${targetFile}.bak`;
+    try {
+        fs.copyFileSync(targetFile, backupPath);
+        return backupPath;
+    } catch (e: any) {
+        console.error(`[McpConfigurator] 备份配置文件失败 (${clientName}): ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * 向 TOML 格式（如 Codex 的 config.toml）安全增量注入 mcp-bridge 配置
+ * @param content 现有的 TOML 字符串
+ * @param command 启动命令 (如 node)
+ * @param args 命令参数数组
+ * @returns 更新后的 TOML 字符串
+ */
+export function processTomlInjection(content: string, command: string, args: string[]): string {
+    const formattedArgs = JSON.stringify(args);
+    const tomlSection = `[mcp_servers.mcp-bridge]\ncommand = "${command.replace(/\\/g, '\\\\')}"\nargs = ${formattedArgs}\n`;
+
+    const sectionHeaderRegex = /\[mcp_servers\.mcp-bridge\][\s\S]*?(?=\n\[|\n$|$)/;
+    if (sectionHeaderRegex.test(content)) {
+        // 若已存在 [mcp_servers.mcp-bridge] 段落，精准替换
+        return content.replace(sectionHeaderRegex, tomlSection.trim());
+    } else {
+        // 若不存在，追加在文件结尾
+        const prefix = content.length > 0 && !content.endsWith('\n') ? '\n\n' : (content.length > 0 ? '\n' : '');
+        return content + prefix + tomlSection;
+    }
+}
+
+/**
+ * 扫描系统中已知 AI 客户端的配置文件存在状态及 MCP 注入配置状态
+ * @returns 客户端配置检测结果列表
+ */
 export function scanMcpClients(): any[] {
     return targetPaths.map((t, id) => {
         if (!t.file) {
@@ -57,11 +122,18 @@ export function scanMcpClients(): any[] {
         if (isInstalled && fs.existsSync(t.file)) {
             try {
                 const raw = fs.readFileSync(t.file, 'utf-8');
-                const data = JSON.parse(raw);
-                if (data.mcpServers && data.mcpServers['mcp-bridge']) {
-                    const cfg = data.mcpServers['mcp-bridge'];
-                    if (cfg.command && cfg.command.includes('node') && cfg.args && cfg.args[0] && (cfg.args[0].includes('index.js') || cfg.args[0].includes('mcp-proxy.js'))) {
+                if (t.format === 'toml') {
+                    if (raw.includes('[mcp_servers.mcp-bridge]') && raw.includes('mcp-proxy.js')) {
                         isConfigured = true;
+                    }
+                } else {
+                    const data = JSON.parse(raw);
+                    const rootKey = t.mcpKey || 'mcpServers';
+                    if (data[rootKey] && data[rootKey]['mcp-bridge']) {
+                        const cfg = data[rootKey]['mcp-bridge'];
+                        if (cfg.command && cfg.command.includes('node') && cfg.args && cfg.args[0] && (cfg.args[0].includes('index.js') || cfg.args[0].includes('mcp-proxy.js'))) {
+                            isConfigured = true;
+                        }
                     }
                 }
             } catch(e) {
@@ -72,6 +144,10 @@ export function scanMcpClients(): any[] {
     });
 }
 
+/**
+ * 获取默认的标准 JSON MCP 配置 Payload
+ * @returns JSON 配置字符串
+ */
 export function getPayload(): string {
     const payload = {
         "mcpServers": {
@@ -84,7 +160,13 @@ export function getPayload(): string {
     return JSON.stringify(payload, null, 2);
 }
 
-export function injectMcpConfig(clientId: number): string {
+/**
+ * 注入 MCP Bridge 配置至指定的 AI 客户端配置文件中
+ * 支持自动创建目录、.bak 备份兜底以及 JSON/TOML 格式的安全增量合并
+ * @param clientId 客户端索引 ID（可选，不传时注入全部可注入的目标）
+ * @returns 操作日志信息
+ */
+export function injectMcpConfig(clientId?: number): string {
     let log = '';
     let successCount = 0;
     
@@ -98,34 +180,65 @@ export function injectMcpConfig(clientId: number): string {
 
         const targetDir = path.dirname(target.file);
         if (!fs.existsSync(targetDir)) {
-            continue;
-        }
-
-        let mcpData: any = { mcpServers: {} };
-        if (fs.existsSync(target.file)) {
             try {
-                const raw = fs.readFileSync(target.file, 'utf-8');
-                mcpData = JSON.parse(raw);
-                if (!mcpData.mcpServers) {
-                    mcpData.mcpServers = {};
-                }
+                fs.mkdirSync(targetDir, { recursive: true });
             } catch (e: any) {
-                log += `⚠️ [${target.name}] 文件损坏，放弃写入: ${e.message}\n`;
+                log += `❌ [${target.name}] 创建目录失败: ${e.message}\n`;
                 continue;
             }
         }
 
-        mcpData.mcpServers['mcp-bridge'] = {
-            command: bridgeCommand,
-            args: bridgeArgs
-        };
+        // 步骤1：如果目标配置文件已存在，先进行自动备份兜底
+        const backupFile = backupConfigFile(target.file, target.name);
+        if (backupFile) {
+            log += `📦 [${target.name}] 已安全备份原始配置至 ${path.basename(backupFile)}\n`;
+        }
 
-        try {
-            fs.writeFileSync(target.file, JSON.stringify(mcpData, null, 2), 'utf-8');
-            log += `✅ [${target.name}] 成功注入配置。\n`;
-            successCount++;
-        } catch (e: any) {
-            log += `❌ [${target.name}] 写入失败: ${e.message}\n`;
+        // 步骤2：根据格式进行安全增量合并
+        if (target.format === 'toml') {
+            let existingContent = '';
+            if (fs.existsSync(target.file)) {
+                existingContent = fs.readFileSync(target.file, 'utf-8');
+            }
+            const updatedToml = processTomlInjection(existingContent, bridgeCommand, bridgeArgs);
+            try {
+                fs.writeFileSync(target.file, updatedToml, 'utf-8');
+                log += `✅ [${target.name}] 成功注入 TOML 配置。\n`;
+                successCount++;
+            } catch (e: any) {
+                log += `❌ [${target.name}] 写入失败: ${e.message}\n`;
+            }
+        } else {
+            // 默认 JSON 格式
+            let mcpData: any = {};
+            const rootKey = target.mcpKey || 'mcpServers';
+
+            if (fs.existsSync(target.file)) {
+                try {
+                    const raw = fs.readFileSync(target.file, 'utf-8');
+                    mcpData = JSON.parse(raw);
+                } catch (e: any) {
+                    log += `⚠️ [${target.name}] 原始 JSON 损坏，放弃写入: ${e.message}\n`;
+                    continue;
+                }
+            }
+
+            if (!mcpData[rootKey] || typeof mcpData[rootKey] !== 'object') {
+                mcpData[rootKey] = {};
+            }
+
+            mcpData[rootKey]['mcp-bridge'] = {
+                command: bridgeCommand,
+                args: bridgeArgs
+            };
+
+            try {
+                fs.writeFileSync(target.file, JSON.stringify(mcpData, null, 2), 'utf-8');
+                log += `✅ [${target.name}] 成功注入 JSON 配置。\n`;
+                successCount++;
+            } catch (e: any) {
+                log += `❌ [${target.name}] 写入失败: ${e.message}\n`;
+            }
         }
     }
 
