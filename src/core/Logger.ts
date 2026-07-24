@@ -42,11 +42,36 @@ export class Logger {
 	}
 
 	/**
+	 * 格式化 Date 为本地时间 + 时区偏移量字符串
+	 * @param date 目标 Date 对象，默认为当前时间
+	 * @returns 格式如 "2026-07-24 10:59:07.123 +08:00"
+	 */
+	public static formatLocalTimeWithOffset(date: Date = new Date()): string {
+		const pad = (num: number, len: number = 2) => String(num).padStart(len, "0");
+
+		const year = date.getFullYear();
+		const month = pad(date.getMonth() + 1);
+		const day = pad(date.getDate());
+		const hours = pad(date.getHours());
+		const minutes = pad(date.getMinutes());
+		const seconds = pad(date.getSeconds());
+		const ms = pad(date.getMilliseconds(), 3);
+
+		const offsetMinutes = date.getTimezoneOffset();
+		const sign = offsetMinutes <= 0 ? "+" : "-";
+		const absOffset = Math.abs(offsetMinutes);
+		const offsetHours = pad(Math.floor(absOffset / 60));
+		const offsetMins = pad(absOffset % 60);
+
+		return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms} ${sign}${offsetHours}:${offsetMins}`;
+	}
+
+	/**
 	 * 记录日志并同步至面板和文件
 	 */
 	public static log(type: 'info' | 'success' | 'warn' | 'error' | 'mcp', message: string) {
 		const logEntry = {
-			time: new Date().toISOString().replace("T", " ").substring(0, 23),
+			time: Logger.formatLocalTimeWithOffset(),
 			type: type,
 			content: message,
 		};
